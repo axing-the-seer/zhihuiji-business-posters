@@ -1,8 +1,8 @@
 {
   "init": {
-    "darwin": "npm install -g @co-ailit/ailit-cli@0.8.0",
-    "linux": "npm install -g @co-ailit/ailit-cli@0.8.0",
-    "win32": "npm install -g @co-ailit/ailit-cli@0.8.0"
+    "darwin": "npm install -g @co-ailit/ailit-cli@0.8.0 && npm --prefix skills/business-posters ci --omit=dev",
+    "linux": "npm install -g @co-ailit/ailit-cli@0.8.0 && npm --prefix skills/business-posters ci --omit=dev",
+    "win32": "npm install -g @co-ailit/ailit-cli@0.8.0 && npm --prefix skills/business-posters ci --omit=dev"
   },
   "auth": {
     "darwin": "ailit auth login --workbuddy-auto-return",
@@ -29,7 +29,7 @@
   },
   "runtime": {
     "type": "node",
-    "version": ">=18.0.0"
+    "version": ">=20.9.0"
   },
   "versionCheck": {
     "command": {

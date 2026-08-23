@@ -186,27 +186,43 @@ function normalizeStock(rows, label) {
   }));
 }
 
-function stockIdentity(row) {
-  if (row.id !== null && row.id !== undefined && String(row.id).trim()) return `id:${String(row.id).trim()}`;
-  return `name:${safeText(row.name, '未命名商品').toLocaleLowerCase('zh-CN')}`;
-}
-
-function uniqueStockRows(rows) {
-  const seen = new Set();
-  return rows.filter((row) => {
-    const key = stockIdentity(row);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
 export function standardizeInventoryRisks(lowRows, outRows) {
   const combined = [...lowRows, ...outRows];
-  const outOfStock = uniqueStockRows(combined.filter((row) => row.stock <= 0))
-    .map((row) => ({ ...row, stock: 0 }));
-  const outKeys = new Set(outOfStock.map(stockIdentity));
-  const lowStock = uniqueStockRows(combined.filter((row) => row.stock > 0 && !outKeys.has(stockIdentity(row))));
+  const normalizedName = (row) => safeText(row.name, '未命名商品').toLocaleLowerCase('zh-CN');
+  const nameIds = new Map();
+  for (const row of combined) {
+    if (row.id === null || row.id === undefined || !String(row.id).trim()) continue;
+    const name = normalizedName(row);
+    if (!nameIds.has(name)) nameIds.set(name, new Set());
+    nameIds.get(name).add(String(row.id).trim());
+  }
+  const identity = (row) => {
+    if (row.id !== null && row.id !== undefined && String(row.id).trim()) return `id:${String(row.id).trim()}`;
+    const name = normalizedName(row);
+    const ids = nameIds.get(name);
+    return ids?.size === 1 ? `id:${[...ids][0]}` : `name:${name}`;
+  };
+  const groups = new Map();
+  for (const row of combined) {
+    const key = identity(row);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  const canonical = [...groups.values()].map((rows) => [...rows].sort((left, right) => {
+    if (left.stock !== right.stock) return left.stock - right.stock;
+    return Number(right.id !== null && right.id !== undefined) - Number(left.id !== null && left.id !== undefined);
+  })[0]);
+  const outOfStock = canonical
+    .filter((row) => row.stock <= 0)
+    .map((row) => ({
+      ...row,
+      raw_stock: row.stock,
+      stock: 0,
+      warning: row.stock < 0 ? 'negative_stock' : null
+    }));
+  const lowStock = canonical
+    .filter((row) => row.stock > 0)
+    .map((row) => ({ ...row, raw_stock: row.stock, warning: null }));
   return {
     lowStock: sortDesc(lowStock, (row) => -row.stock),
     outOfStock
@@ -505,7 +521,7 @@ export function buildMonthlyReportModel({
       previous_sale_count: previousSales.length,
       current_purchase_row_count: purchase.row_count,
       previous_purchase_row_count: previousPurchase.row_count,
-      warnings: []
+      warnings: outOfStock.some((row) => row.warning === 'negative_stock') ? ['negative_stock_present'] : []
     }
   };
 }

@@ -9,7 +9,6 @@ import {
 import { dirname, extname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import sharp from 'sharp';
 import { formatMoney, PosterError } from './calendar-core.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -420,16 +419,6 @@ function listRows({ items, x, y, width, rowHeight, maxValue, value, secondary, e
   }).join('');
 }
 
-function uniqueStockRows(items) {
-  const seen = new Set();
-  return items.filter((item) => {
-    const key = item.id == null ? `${item.name}:${item.stock}` : String(item.id);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
 function stockRiskRows(items, x, y, width, color, emptyText) {
   if (!items.length) {
     return `<text x="${x + width / 2}" y="${y + 55}" text-anchor="middle" font-size="24" fill="${COLORS.faint}">${esc(emptyText)}</text>`;
@@ -552,9 +541,8 @@ function renderGoodsAndStaff(model, variant = 'clean') {
   const purchaseEmptyState = model.purchase.total_amount_cents === 0 && model.purchase.order_count === 0
     ? '本月无进货记录'
     : '';
-  const outRows = uniqueStockRows(model.risks.out_of_stock);
-  const outKeys = new Set(outRows.map((row) => row.id == null ? `${row.name}:${row.stock}` : String(row.id)));
-  const lowRows = uniqueStockRows(model.risks.low_stock).filter((row) => row.stock > 0 && !outKeys.has(row.id == null ? `${row.name}:${row.stock}` : String(row.id)));
+  const outRows = model.risks.out_of_stock;
+  const lowRows = model.risks.low_stock;
   let body = `${page2Backdrop()}${jointLogo()}`;
 
   const showComparison = variant === 'compare';
@@ -671,8 +659,8 @@ function renderFundsAndActions(model) {
 export function renderMonthlyReportSvgs(model, { page2Variant = 'clean' } = {}) {
   return [
     { slug: '01-经营概览', title: '经营概览', svg: renderOverview(model) },
-    { slug: '02-货品与人员', title: '货品与人员', svg: renderGoodsAndStaff(model, page2Variant) },
-    { slug: '03-资金与行动', title: '资金与行动', svg: renderFundsAndActions(model) }
+    { slug: '02-商品与库存', title: '商品与库存', svg: renderGoodsAndStaff(model, page2Variant) },
+    { slug: '03-收款与客户', title: '收款与客户', svg: renderFundsAndActions(model) }
   ];
 }
 
@@ -685,6 +673,12 @@ function verifyPng(path) {
 }
 
 export async function renderMonthlyReportPngSet(model, outputDir, { keepSvg = false, page2Variant = 'clean' } = {}) {
+  let sharp;
+  try {
+    ({ default: sharp } = await import('sharp'));
+  } catch (error) {
+    throw new PosterError('RENDERER_MISSING', '经营海报渲染组件未初始化', { cause_code: error?.code || 'UNKNOWN' });
+  }
   const absoluteDir = resolve(outputDir);
   mkdirSync(absoluteDir, { recursive: true });
   const work = mkdtempSync(join(tmpdir(), 'ailit-monthly-report-'));

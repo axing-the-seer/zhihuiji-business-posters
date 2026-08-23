@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { PosterError, buildCalendarModel, collectionRanges, formatMoney, todayInTimeZone, amountToCents, shouldCrossCheckCurrentSummary } from './calendar-core.mjs';
 import { renderCalendarPng } from './calendar-render.mjs';
+import {
+  assertNoUnverifiedReturns,
+  ensureAilitHealthy,
+  fetchPaged,
+  fetchValidatedReceipts,
+  runAilitJson,
+  sanitizeCliError
+} from './ailit-runtime.mjs';
 
 function parseArgs(argv) {
   const options = { keepSvg: false, fixture: null, dataOut: null, month: null, asOf: null, output: null, shopName: null };
@@ -24,52 +31,35 @@ function parseArgs(argv) {
   return options;
 }
 
-function runAilitJson(args) {
-  const result = spawnSync('ailit', [...args, '--format', 'json'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-  if (result.error?.code === 'ENOENT') throw new PosterError('AILIT_MISSING', '未找到 ailit CLI');
-  if (result.status !== 0) {
-    const message = (result.stderr || result.stdout || '').trim().replace(/\s+/g, ' ');
-    throw new PosterError('AILIT_FAILED', `ailit ${args.slice(0, 2).join(' ')} 失败：${message}`);
+function userMessageFor(error) {
+  const code = error instanceof PosterError ? error.code : 'UNEXPECTED';
+  if (code === 'AILIT_MISSING' || code === 'RENDERER_MISSING') return '经营海报服务尚未完成初始化，请重新安装或连接“经营海报”后再试。';
+  if (code === 'SHOP_MISSING') return '当前还没有选择经营店铺，请先在智慧记中选择店铺。';
+  if (code === 'SALES_RETURN_UNVERIFIED') return '本月或对比月份存在销售退货，当前版本暂时无法准确计入。为避免金额错误，本次没有生成经营日历。';
+  if (code.startsWith('RECEIPT_')) return '部分收款记录暂时无法准确核对。为避免金额错误，本次没有生成经营日历。';
+  if (['MISSING_ARGUMENT', 'UNKNOWN_ARGUMENT', 'INVALID_MONTH', 'FUTURE_MONTH'].includes(code)) return error.message;
+  if (code.startsWith('AILIT_')) return '智慧记数据暂时读取失败，请稍后重试。';
+  if (code.startsWith('PAGINATION_') || code.startsWith('CROSS_CHECK_') || code.endsWith('_SHAPE')) {
+    return '部分经营数据未通过一致性检查，为避免生成错误日历，本次没有出图。';
   }
-  try {
-    return JSON.parse(result.stdout);
-  } catch {
-    throw new PosterError('AILIT_JSON', `ailit ${args.slice(0, 2).join(' ')} 返回了无效 JSON`);
-  }
-}
-
-function fetchPaged(baseArgs, start, end) {
-  const rows = [];
-  const seen = new Set();
-  let page = 1;
-  let expectedTotal = null;
-  while (true) {
-    const response = runAilitJson([...baseArgs, '-s', start, '-e', end, '-p', String(page), '-z', '100']);
-    if (!response || !Number.isInteger(response.total) || !Array.isArray(response.list)) throw new PosterError('PAGINATION_SHAPE', `${baseArgs.join(' ')} 分页结构异常`);
-    if (expectedTotal === null) expectedTotal = response.total;
-    if (response.total !== expectedTotal) throw new PosterError('PAGINATION_CHANGED', `${baseArgs.join(' ')} 拉取过程中 total 发生变化`);
-    for (const row of response.list) {
-      if (row?.id !== undefined && row?.id !== null) {
-        const id = String(row.id);
-        if (seen.has(id)) throw new PosterError('PAGINATION_DUPLICATE', `${baseArgs.join(' ')} 跨页出现重复 id：${id}`);
-        seen.add(id);
-      }
-      rows.push(row);
-    }
-    if (rows.length >= expectedTotal) break;
-    if (response.list.length === 0) throw new PosterError('PAGINATION_INCOMPLETE', `${baseArgs.join(' ')} 分页提前结束`);
-    page += 1;
-    if (page > 10000) throw new PosterError('PAGINATION_LIMIT', `${baseArgs.join(' ')} 分页超过安全上限`);
-  }
-  if (rows.length !== expectedTotal) throw new PosterError('PAGINATION_COUNT', `${baseArgs.join(' ')} 期望 ${expectedTotal} 条，实际 ${rows.length} 条`);
-  return rows;
+  return '经营日历生成失败，请稍后重新生成。';
 }
 
 function fetchSources(range) {
+  const returns = fetchPaged(['sale', 'return-list'], {
+    start: range.start,
+    end: range.end,
+    label: '销售退货单'
+  }).rows;
+  assertNoUnverifiedReturns(returns, '所选月份');
   return {
-    sales: fetchPaged(['sale', 'list'], range.start, range.end),
-    receipts: fetchPaged(['receipt', 'list'], range.start, range.end),
-    returns: fetchPaged(['sale', 'return-list'], range.start, range.end)
+    sales: fetchPaged(['sale', 'list'], {
+      start: range.start,
+      end: range.end,
+      label: '销售单'
+    }).rows,
+    receipts: fetchValidatedReceipts(range),
+    returns
   };
 }
 
@@ -80,15 +70,14 @@ function currentSalePayCents(sales) {
 }
 
 function liveInput(month, asOf) {
-  const doctor = runAilitJson(['doctor']);
-  if (doctor.allPass !== true) throw new PosterError('AILIT_UNHEALTHY', 'ailit doctor 检查未全部通过');
+  ensureAilitHealthy();
   const auth = runAilitJson(['auth', 'status']);
   if (!auth.defaultShop && !auth.merchant) throw new PosterError('SHOP_MISSING', 'ailit 未返回默认店铺');
   const ranges = collectionRanges(month, asOf);
   const currentSources = fetchSources(ranges.current);
   const previousSources = fetchSources(ranges.previous);
   if (shouldCrossCheckCurrentSummary({ ranges, asOf, today: todayInTimeZone(), currentSources })) {
-    const report = runAilitJson(['report', 'all']);
+    const report = runAilitJson(['report', 'all'], { label: '综合报表' });
     const expected = amountToCents(report?.month?.total_pay, 'report all.month.total_pay');
     const actual = currentSalePayCents(currentSources.sales);
     if (Math.abs(expected - actual) > 1) throw new PosterError('CROSS_CHECK_FAILED', `本月即时实收与综合报表相差 ${formatMoney(Math.abs(expected - actual), true)}`);
@@ -138,8 +127,8 @@ try {
   await main();
 } catch (error) {
   const payload = error instanceof PosterError
-    ? { ok: false, code: error.code, error: error.message, details: error.details }
-    : { ok: false, code: 'UNEXPECTED', error: error?.message || String(error) };
+    ? { ok: false, code: error.code, user_message: userMessageFor(error), internal_error: sanitizeCliError(error.message), details: error.details }
+    : { ok: false, code: 'UNEXPECTED', user_message: userMessageFor(error), internal_error: sanitizeCliError(error?.message || String(error)) };
   console.error(JSON.stringify(payload, null, 2));
   process.exit(1);
 }

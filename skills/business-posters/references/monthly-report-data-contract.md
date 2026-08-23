@@ -4,9 +4,9 @@
 
 固定生成三张 `1080×1620` PNG：
 
-1. 经营概览：销售额、上期对比、经营结论、经营利润、总收入、总支出、实收、销售单数、累计销售趋势。
+1. 经营概览：本月销售额、较上月同期、本月利润、毛利率、总支出、经营建议、实收金额、销售单数、销售趋势。
 2. 商品与库存：进货总金额、进货次数、进货商品种数、商品销量 Top 5、商品利润 Top 5、低库存与缺货商品。
-3. 资金与客户：收款渠道、回款率、当前待收、客户欠款、客户贡献。
+3. 收款与客户：本月实际收款、收款渠道、回款率、本月销售单待收、客户欠款、销售贡献。
 
 金额进入标准化模型前逐项转换为整数分；模板不直接接触 CLI 原始明细。
 
@@ -45,8 +45,8 @@ ailit report all --format json
 - 客户销售：`company_id`、`company_name`、`sales`、`total_amt`、`profit_amt`。展示层按后端系统客户名精确匹配：`零售散客` 为零售散客图标，`批发散客` 为批发散客图标，其余为其他客户图标。
 - 员工业绩：`operator_id`、`operator_name`、`sales`、`total_tamt`、`profit_tamt`、`cost_profit_ratio`。
 - 客户欠款：`name`、`cur_amt`、`last_bill_date`；欠款为生成时命名客户的当前快照，系统默认客户 `零售散客/批发散客` 即使存在未收销售单也不出现在此接口。`cur_amt` 可包含期初余额、历史单据或人工调账，不能冒充报告月末欠款，也不能与报告期 `sale list.owe_amt` 强行对平；当前样本 `last_bill_date` 为空，不能据此推导账龄。
-- 独立收款单：`receipt list` 使用 `id/bill_date/total_amt/status/company_name`；`receipt get.base.company_id` 才是可信客户 ID，列表 `company_id` 实测为 0；渠道来自 `receipt get.items[].acct_name/amt`。当前只覆盖 `preferential_amt=0` 且 `prepaid_amt=0` 的真实样本。
-- 库存：`name`、`cur_stock`、`unit_name`、`cost_prc`；低库存和缺货均为生成时当前快照。进入标准化模型时按商品 ID 去重（缺少 ID 时按商品名），再按库存值重新归类：`cur_stock > 0` 进入 `risks.low_stock`，`cur_stock <= 0` 进入 `risks.out_of_stock`，并把报告视图中的库存统一标准化为 `0`，避免负库存穿帮。若同一商品同时出现正数与非正数快照，以非正数/缺货状态优先；两个集合互斥。因此渲染与后续问答都直接使用标准化后的风险集合，不得读取或推断原始重复行。
+- 独立收款单：`receipt list` 使用 `id/bill_date/total_amt/status/company_name`；仅接受已验证的数值 `status=1`，其他状态直接停止。`receipt get.base.company_id` 才是可信客户 ID，列表 `company_id` 实测为 0；渠道来自 `receipt get.items[].acct_name/amt`。当前只覆盖 `preferential_amt=0` 且 `prepaid_amt=0` 的真实样本，日历和月报都逐张核对列表与详情。
+- 库存：`name`、`cur_stock`、`unit_name`、`cost_prc`；低库存和缺货均为生成时当前数据。先建立“标准化商品名→唯一商品 ID”的对应关系，再完成去重和分类，解决一个接口有 ID、另一个接口只有名称的重复。`cur_stock > 0` 进入 `risks.low_stock`，`cur_stock <= 0` 进入 `risks.out_of_stock`。缺货页面仍显示 `0`，模型同时保留 `raw_stock`；负库存增加 `negative_stock` 警告。同一商品正负冲突时以非正数状态优先，两个集合互斥。渲染层直接使用标准化结果，不再二次去重。
 
 ## 收款与渠道口径
 
@@ -56,7 +56,7 @@ ailit report all --format json
 有效销售单即时实收 + 独立客户收款单实际收款 - 销售退货实际退款
 ```
 
-渠道由有效销售单 `bill_pay_amt/acct_name` 与独立收款单 `receipt get.items[].amt/acct_name` 合并。收款单列表与详情的日期、金额或账户合计不一致时停止生成。销售退货仍缺真实非空账户契约，首次出现时必须用 list/get 同一稳定 ID 样本审计；完成前不得把未知渠道计入“其他”。
+渠道由有效销售单 `bill_pay_amt/acct_name` 与独立收款单 `receipt get.items[].amt/acct_name` 合并。收款单列表与详情的日期、金额或账户合计不一致时停止生成。销售退货仍缺真实非空契约；本期或对比期出现任何退货记录时停止生成，完成真实 `return-list/get` 样本审计前不得读取候选退款字段或计入“其他”。
 
 收款类问题按意图拆分：
 
@@ -70,7 +70,7 @@ ailit report all --format json
 
 - 列表命令必须同时返回 `total/list`；固定页长 100，完整读取到 `total`。
 - 跨页稳定 ID 重复、总数变化、提前空页或条数不符时停止。
-- 当前月今天生成且独立收款/退货为空时，用 `report all.month.total_amount/total_sales/total_pay` 校验销售额、销售单数和实收；金额差异超过 1 分或单数不一致时停止。
+- 当前月今天生成时始终用 `report all.month.total_amount/total_sales` 校验销售额和销售单数；只有独立收款为空时才额外用 `total_pay` 校验实收。销售退货当前会在更早阶段直接停止生成。
 - 当前与上期的经营利润都必须满足总收入减总支出关系。
 
 ## 日期与状态
@@ -84,7 +84,7 @@ ailit report all --format json
 
 - 销售额：按 `report sale-stat bill.total_amt` 逐日累计。
 - 回款率：实收 ÷ 销售额；销售额为 0 时为 `null`。
-- 经营利润率：经营利润 ÷ 销售额；销售额为 0 时为 `null`。
+- 毛利率（页面标签）：本月利润 ÷ 销售额；销售额为 0 时为 `null`。
 - 报告期单据当前待收：报告日期范围内有效销售单 `owe_amt` 合计，包含系统默认散客名下的未收单；它不是全部命名客户当前欠款。
 - 上期对比：`(本期 - 上期) ÷ 上期`；上期为 0 时百分比为 `null`。
 - 进货对比：进货金额、有效进货单数和进货商品种数分别与上月同期比较；模板可选择显示或隐藏，数据口径不变。

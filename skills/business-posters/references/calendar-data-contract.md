@@ -17,13 +17,14 @@ ailit doctor --format json
 ailit auth status --format json
 ailit sale list -s <start> -e <end> -p <page> -z 100 --format json
 ailit receipt list -s <start> -e <end> -p <page> -z 100 --format json
+ailit receipt get <id> --format json
 ailit sale return-list -s <start> -e <end> -p <page> -z 100 --format json
 ailit report all --format json
 ```
 
 `sale list` 使用 `bill_date` 与 `bill_pay_amt`，只计 `status=NORMAL` 且 `is_invalid=false` 的记录。`bill_pay_amt` 是开销售单当时的即时实收；`total_pay_amt` 是销售单当前累计已收快照，不能按原销售日期充当现金流，也不能与 `receipt list` 相加。`ailit v0.8.0` 实测分页外层为 `total/list`，销售单已实测包含 `id/bill_date/total_amt/total_pay_amt/bill_pay_amt/owe_amt/settlement_status/acct_name/status/is_invalid`。
 
-2026-08-22 已取得真实非空收款单并用同一稳定 `id` 对照 `receipt list/get`：收款日期为 `bill_date`，实际收款为 `total_amt`，状态为数值 `status=1`；账户拆分只在 `receipt get.items[]` 中提供，字段为 `acct_id/acct_name/acct_type/amt`。列表的 `company_id` 实测错误返回 0，客户 ID 必须以 `receipt get.base.company_id` 为准。当前样本 `preferential_amt/prepaid_amt` 均为 0；首次遇到非零优惠或预存款抵扣时仍须停止并重新审计。退货单仍缺非空样本，首次出现时需用 `return-list/get` 交叉确认实际退款和账户字段。
+2026-08-22 已取得真实非空收款单并用同一稳定 `id` 对照 `receipt list/get`：收款日期为 `bill_date`，实际收款为 `total_amt`，状态为数值 `status=1`；账户拆分只在 `receipt get.items[]` 中提供，字段为 `acct_id/acct_name/acct_type/amt`。日历与月报都必须逐张执行列表/详情金额、日期、账户合计以及优惠和预存款检查。仅接受数值 `status=1`；出现其他状态时停止。当前样本 `preferential_amt/prepaid_amt` 均为 0；首次遇到非零值时停止。退货单仍缺非空样本，本期或对比期出现任何退货记录时直接停止生成，取得真实样本并完成 `return-list/get` 审计后才能启用退款计算。
 
 ## 收款意图边界
 
@@ -40,7 +41,7 @@ ailit report all --format json
 - 跨页出现相同稳定 `id` 视为分页异常并停止。
 - 生成“今天”的当前月且没有独立收款/退款时，月累计即时实收必须与 `report all.month.total_pay` 相符；差异超过 1 分时停止生成。自定义历史 `as-of` 不与包含更新数据的当前综合报表强行比较。
 
-2026-08-22 的测试账套已验证：销售单即时实收使用 `sale list.bill_pay_amt`；独立收款单使用 `receipt list.total_amt`，并以 `receipt get.items[].amt` 对账和拆分渠道。`report sale-stat bill` 不含收款字段，不用于此模板。退货单仍采用严格失败策略，首次遇到非空未知字段会停止生成。
+2026-08-22 的测试账套已验证：销售单即时实收使用 `sale list.bill_pay_amt`；独立收款单使用 `receipt list.total_amt`，并以 `receipt get.items[].amt` 对账和拆分渠道。`report sale-stat bill` 不含收款字段，不用于此模板。退货单采用严格失败策略：本期或对比期只要非空就停止生成，不读取候选金额字段。
 
 ## 日期与对比
 

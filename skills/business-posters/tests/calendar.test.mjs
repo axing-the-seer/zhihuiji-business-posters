@@ -15,18 +15,31 @@ test('日期校验拒绝不存在的自然日', () => {
   assert.equal(isIsoDate('2026-04-31'), false);
 });
 
-test('到账净收款合并即时实收、独立收款并扣减退款', () => {
+test('到账收款合并即时实收和已验证的独立收款', () => {
   const result = aggregateSources({
     sales: [
       { id: 1, bill_date: '2026-08-01', bill_pay_amt: 100, status: 'NORMAL', is_invalid: false },
       { id: 2, bill_date: '2026-08-01', bill_pay_amt: 999, status: 'NORMAL', is_invalid: true }
     ],
     receipts: [{ id: 3, bill_date: '2026-08-02', total_amt: 25, status: 1 }],
-    returns: [{ id: 4, bill_date: '2026-08-02', pay_amt: 10 }]
+    returns: []
   }, '2026-08-01', '2026-08-22');
   assert.equal(result.daily.get('2026-08-01'), 10000);
-  assert.equal(result.daily.get('2026-08-02'), 1500);
-  assert.equal(result.events.length, 3);
+  assert.equal(result.daily.get('2026-08-02'), 2500);
+  assert.equal(result.events.length, 2);
+});
+
+test('未知收款状态和未验证退货都会停止生成', () => {
+  assert.throws(() => aggregateSources({
+    sales: [],
+    receipts: [{ id: 1, bill_date: '2026-08-01', total_amt: 10, status: 2 }],
+    returns: []
+  }, '2026-08-01', '2026-08-22'), (error) => error.code === 'RECEIPT_STATUS_UNVERIFIED');
+  assert.throws(() => aggregateSources({
+    sales: [],
+    receipts: [],
+    returns: [{ id: 2, bill_date: '2026-08-02', pay_amt: 10 }]
+  }, '2026-08-01', '2026-08-22'), (error) => error.code === 'SALES_RETURN_UNVERIFIED');
 });
 
 test('当前月与上月相同进度比较', () => {
@@ -69,7 +82,7 @@ test('模型计算 KPI、未来日和固定提示', () => {
         { id: 2, bill_date: '2026-08-03', bill_pay_amt: 50.25, status: 'NORMAL', is_invalid: false }
       ],
       receipts: [{ id: 3, bill_date: '2026-08-02', total_amt: 25, status: 1 }],
-      returns: [{ id: 4, bill_date: '2026-08-03', pay_amt: 10 }]
+      returns: []
     },
     previousSources: {
       sales: [{ id: 5, bill_date: '2026-07-01', bill_pay_amt: 100, status: 'NORMAL', is_invalid: false }],
@@ -77,12 +90,12 @@ test('模型计算 KPI、未来日和固定提示', () => {
       returns: []
     }
   });
-  assert.equal(model.metrics.total_cents, 16525);
+  assert.equal(model.metrics.total_cents, 17525);
   assert.equal(model.metrics.collection_days, 3);
   assert.equal(model.metrics.operating_ratio, 3 / 22);
-  assert.equal(model.metrics.average_cents, 5508);
+  assert.equal(model.metrics.average_cents, 5842);
   assert.deepEqual(model.metrics.highest_day, { date: '2026-08-01', amount_cents: 10000 });
-  assert.equal(model.comparison.delta_cents, 6525);
+  assert.equal(model.comparison.delta_cents, 7525);
   assert.equal(model.days.find((day) => day.day === 23).status, 'future');
   assert.match(model.tip, /连续 19 日无收款记录/);
 });
@@ -123,39 +136,6 @@ test('上月同期为零时不制造百分比', () => {
   });
   assert.equal(model.comparison.rate, null);
   assert.equal(model.tip, '本月最高单日收款为 ¥20.00，出现在 8月1日。');
-});
-
-test('退款超过收款时保留净退款日状态', () => {
-  const model = buildCalendarModel({
-    month: '2026-08',
-    asOf: '2026-08-02',
-    shopName: '测试店铺',
-    currentSources: {
-      sales: [{ id: 1, bill_date: '2026-08-01', bill_pay_amt: 20, status: 'NORMAL', is_invalid: false }],
-      receipts: [],
-      returns: [{ id: 2, bill_date: '2026-08-02', pay_amt: 50 }]
-    },
-    previousSources: { sales: [], receipts: [], returns: [] }
-  });
-  assert.equal(model.metrics.total_cents, -3000);
-  assert.equal(model.days.find((day) => day.day === 2).status, 'negative');
-  assert.equal(model.tip, '本月最高单日收款为 ¥20.00，出现在 8月1日。');
-});
-
-test('本月净收款为零时使用已确认的空状态文案', () => {
-  const model = buildCalendarModel({
-    month: '2026-08',
-    asOf: '2026-08-02',
-    shopName: '测试店铺',
-    currentSources: {
-      sales: [{ id: 1, bill_date: '2026-08-01', bill_pay_amt: 50, status: 'NORMAL', is_invalid: false }],
-      receipts: [],
-      returns: [{ id: 2, bill_date: '2026-08-02', pay_amt: 50 }]
-    },
-    previousSources: { sales: [], receipts: [], returns: [] }
-  });
-  assert.equal(model.metrics.total_cents, 0);
-  assert.equal(model.tip, '本月暂未记录收款。');
 });
 
 test('连续五日有收款时显示连续营业提示', () => {

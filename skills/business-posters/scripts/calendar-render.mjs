@@ -2,7 +2,6 @@ import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, renameSync, rmSync
 import { dirname, extname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import sharp from 'sharp';
 import { formatMoney, PosterError } from './calendar-core.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -249,6 +248,12 @@ function verifyPng(path) {
 }
 
 export async function renderCalendarPng(model, outputPath, { keepSvg = false } = {}) {
+  let sharp;
+  try {
+    ({ default: sharp } = await import('sharp'));
+  } catch (error) {
+    throw new PosterError('RENDERER_MISSING', '经营海报渲染组件未初始化', { cause_code: error?.code || 'UNKNOWN' });
+  }
   const absoluteOutput = resolve(outputPath);
   if (extname(absoluteOutput).toLowerCase() !== '.png') throw new PosterError('OUTPUT_EXTENSION', '输出文件必须以 .png 结尾');
   mkdirSync(dirname(absoluteOutput), { recursive: true });

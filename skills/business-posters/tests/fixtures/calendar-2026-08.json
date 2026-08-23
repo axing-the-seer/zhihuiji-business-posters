@@ -1,40 +1,197 @@
 {
-  "shopName": "我的店铺",
+  "fixture_notice": "SYNTHETIC_FIXED_SEED_20260823",
+  "shopName": "固定种子合成测试店铺",
   "fetchedAt": "2026-08-22T08:30:00.000Z",
   "currentSources": {
     "sales": [
-      {"id": 1, "bill_date": "2026-08-01", "bill_pay_amt": 9, "status": "NORMAL", "is_invalid": false},
-      {"id": 2, "bill_date": "2026-08-02", "bill_pay_amt": 67.5, "status": "NORMAL", "is_invalid": false},
-      {"id": 3, "bill_date": "2026-08-03", "bill_pay_amt": 69, "status": "NORMAL", "is_invalid": false},
-      {"id": 4, "bill_date": "2026-08-04", "bill_pay_amt": 141, "status": "NORMAL", "is_invalid": false},
-      {"id": 5, "bill_date": "2026-08-05", "bill_pay_amt": 60, "status": "NORMAL", "is_invalid": false},
-      {"id": 6, "bill_date": "2026-08-06", "bill_pay_amt": 244.5, "status": "NORMAL", "is_invalid": false},
-      {"id": 7, "bill_date": "2026-08-07", "bill_pay_amt": 235.5, "status": "NORMAL", "is_invalid": false},
-      {"id": 8, "bill_date": "2026-08-08", "bill_pay_amt": 70, "status": "NORMAL", "is_invalid": false},
-      {"id": 9, "bill_date": "2026-08-09", "bill_pay_amt": 334.5, "status": "NORMAL", "is_invalid": false},
-      {"id": 10, "bill_date": "2026-08-10", "bill_pay_amt": 41.5, "status": "NORMAL", "is_invalid": false},
-      {"id": 11, "bill_date": "2026-08-11", "bill_pay_amt": 99, "status": "NORMAL", "is_invalid": false},
-      {"id": 12, "bill_date": "2026-08-12", "bill_pay_amt": 186.5, "status": "NORMAL", "is_invalid": false},
-      {"id": 13, "bill_date": "2026-08-13", "bill_pay_amt": 177.5, "status": "NORMAL", "is_invalid": false},
-      {"id": 14, "bill_date": "2026-08-14", "bill_pay_amt": 36, "status": "NORMAL", "is_invalid": false},
-      {"id": 15, "bill_date": "2026-08-15", "bill_pay_amt": 855, "status": "NORMAL", "is_invalid": false},
-      {"id": 16, "bill_date": "2026-08-16", "bill_pay_amt": 113.5, "status": "NORMAL", "is_invalid": false},
-      {"id": 17, "bill_date": "2026-08-17", "bill_pay_amt": 380, "status": "NORMAL", "is_invalid": false},
-      {"id": 18, "bill_date": "2026-08-18", "bill_pay_amt": 547.5, "status": "NORMAL", "is_invalid": false},
-      {"id": 19, "bill_date": "2026-08-19", "bill_pay_amt": 82, "status": "NORMAL", "is_invalid": false},
-      {"id": 20, "bill_date": "2026-08-20", "bill_pay_amt": 714.5, "status": "NORMAL", "is_invalid": false},
-      {"id": 21, "bill_date": "2026-08-21", "bill_pay_amt": 397.5, "status": "NORMAL", "is_invalid": false},
-      {"id": 22, "bill_date": "2026-08-22", "bill_pay_amt": 109.5, "status": "NORMAL", "is_invalid": false}
+      {
+        "id": 1,
+        "bill_date": "2026-08-01",
+        "bill_pay_amt": 138,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 2,
+        "bill_date": "2026-08-02",
+        "bill_pay_amt": 123,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 3,
+        "bill_date": "2026-08-03",
+        "bill_pay_amt": 231,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 4,
+        "bill_date": "2026-08-04",
+        "bill_pay_amt": 206,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 5,
+        "bill_date": "2026-08-05",
+        "bill_pay_amt": 152,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 6,
+        "bill_date": "2026-08-06",
+        "bill_pay_amt": 143,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 7,
+        "bill_date": "2026-08-07",
+        "bill_pay_amt": 179,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 8,
+        "bill_date": "2026-08-08",
+        "bill_pay_amt": 225,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 9,
+        "bill_date": "2026-08-09",
+        "bill_pay_amt": 252,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 10,
+        "bill_date": "2026-08-10",
+        "bill_pay_amt": 197,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 11,
+        "bill_date": "2026-08-11",
+        "bill_pay_amt": 275,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 12,
+        "bill_date": "2026-08-12",
+        "bill_pay_amt": 289,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 13,
+        "bill_date": "2026-08-13",
+        "bill_pay_amt": 205,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 14,
+        "bill_date": "2026-08-14",
+        "bill_pay_amt": 215,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 15,
+        "bill_date": "2026-08-15",
+        "bill_pay_amt": 247,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 16,
+        "bill_date": "2026-08-16",
+        "bill_pay_amt": 241,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 17,
+        "bill_date": "2026-08-17",
+        "bill_pay_amt": 212,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 18,
+        "bill_date": "2026-08-18",
+        "bill_pay_amt": 224,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 19,
+        "bill_date": "2026-08-19",
+        "bill_pay_amt": 250,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 20,
+        "bill_date": "2026-08-20",
+        "bill_pay_amt": 221,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 21,
+        "bill_date": "2026-08-21",
+        "bill_pay_amt": 310,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 22,
+        "bill_date": "2026-08-22",
+        "bill_pay_amt": 372,
+        "status": "NORMAL",
+        "is_invalid": false
+      }
     ],
     "receipts": [],
     "returns": []
   },
   "previousSources": {
     "sales": [
-      {"id": 101, "bill_date": "2026-07-01", "bill_pay_amt": 350, "status": "NORMAL", "is_invalid": false},
-      {"id": 102, "bill_date": "2026-07-08", "bill_pay_amt": 620, "status": "NORMAL", "is_invalid": false},
-      {"id": 103, "bill_date": "2026-07-15", "bill_pay_amt": 880, "status": "NORMAL", "is_invalid": false},
-      {"id": 104, "bill_date": "2026-07-22", "bill_pay_amt": 940, "status": "NORMAL", "is_invalid": false}
+      {
+        "id": 101,
+        "bill_date": "2026-07-01",
+        "bill_pay_amt": 249,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 102,
+        "bill_date": "2026-07-08",
+        "bill_pay_amt": 312,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 103,
+        "bill_date": "2026-07-15",
+        "bill_pay_amt": 375,
+        "status": "NORMAL",
+        "is_invalid": false
+      },
+      {
+        "id": 104,
+        "bill_date": "2026-07-22",
+        "bill_pay_amt": 438,
+        "status": "NORMAL",
+        "is_invalid": false
+      }
     ],
     "receipts": [],
     "returns": []

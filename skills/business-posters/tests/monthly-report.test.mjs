@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { buildMonthlyReportModel } from '../scripts/monthly-report-core.mjs';
+import { buildMonthlyReportModel, standardizeInventoryRisks } from '../scripts/monthly-report-core.mjs';
 import { renderMonthlyReportPngSet, renderMonthlyReportSvgs } from '../scripts/monthly-report-render.mjs';
 
 function period({ date, sales = 100, paid = 80, expense = 60, purchase = 50 } = {}) {
@@ -73,6 +73,35 @@ test('真实收款单金额和账户明细进入实收与渠道', () => {
   ]);
 });
 
+test('月报拒绝未知收款状态和本期或对比期退货', () => {
+  const unknownReceipt = period({ date: '2026-07-01' });
+  unknownReceipt.receipts = [{ id: 'r1', bill_date: '2026-07-02', total_amt: 20, status: 2, receipt_accounts: [] }];
+  assert.throws(() => buildMonthlyReportModel(input({ current: unknownReceipt })), (error) => error.code === 'RECEIPT_STATUS_UNVERIFIED');
+
+  const currentReturn = period({ date: '2026-07-01' });
+  currentReturn.returns = [{ id: 'rt1', bill_date: '2026-07-03', pay_amt: 10 }];
+  assert.throws(() => buildMonthlyReportModel(input({ current: currentReturn })), (error) => error.code === 'SALES_RETURN_UNVERIFIED');
+
+  const previousReturn = period({ date: '2026-06-01', sales: 80, paid: 70, expense: 50, purchase: 40 });
+  previousReturn.returns = [{ id: 'rt2', bill_date: '2026-06-03', pay_amt: 10 }];
+  assert.throws(() => buildMonthlyReportModel(input({ previous: previousReturn })), (error) => error.code === 'SALES_RETURN_UNVERIFIED');
+});
+
+test('库存用唯一名称补齐商品 ID，负库存后台保留但页面值仍为零', () => {
+  const risks = standardizeInventoryRisks([
+    { id: 'p1', name: '合成商品A', stock: 3, unit: '件', cost_cents: 100 },
+    { id: null, name: '合成商品B', stock: 2, unit: '件', cost_cents: 200 }
+  ], [
+    { id: null, name: '合成商品A', stock: -2, unit: '件', cost_cents: 100 },
+    { id: 'p2', name: '合成商品B', stock: 0, unit: '件', cost_cents: 200 }
+  ]);
+  assert.deepEqual(risks.lowStock, []);
+  assert.deepEqual(risks.outOfStock.map((row) => [row.name, row.stock, row.raw_stock, row.warning]), [
+    ['合成商品A', 0, -2, 'negative_stock'],
+    ['合成商品B', 0, 0, null]
+  ]);
+});
+
 test('利润关系不一致时停止生成', () => {
   const current = period({ date: '2026-07-01' });
   current.fundProfit.sum_profit_v2 = 39;
@@ -94,13 +123,16 @@ test('真实零数据保留明确零状态并可渲染三页', async () => {
   assert.equal(model.highest_day.date, null);
   assert.equal(model.purchase.total_amount_cents, 0);
   const pages = renderMonthlyReportSvgs(model);
-  assert.deepEqual(pages.map((page) => page.title), ['经营概览', '货品与人员', '资金与行动']);
+  assert.deepEqual(pages.map((page) => page.title), ['经营概览', '商品与库存', '收款与客户']);
   assert.match(pages[0].svg, /本月销售额为 0/);
   assert.match(pages[1].svg, /本月无进货记录/);
   const directory = mkdtempSync(join(tmpdir(), 'monthly-report-test-'));
   try {
     const artifacts = await renderMonthlyReportPngSet(model, directory);
     assert.equal(artifacts.length, 3);
+    assert.match(artifacts[0].png, /01-经营概览\.png$/);
+    assert.match(artifacts[1].png, /02-商品与库存\.png$/);
+    assert.match(artifacts[2].png, /03-收款与客户\.png$/);
     for (const artifact of artifacts) {
       const png = readFileSync(artifact.png);
       assert.equal(png.readUInt32BE(16), 1080);

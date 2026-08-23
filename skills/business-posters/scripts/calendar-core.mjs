@@ -78,6 +78,9 @@ export function todayInTimeZone(timeZone = 'Asia/Shanghai') {
 }
 
 function recordIsValid(record, kind) {
+  if (kind === 'receipt' && record?.status !== 1) {
+    throw new PosterError('RECEIPT_STATUS_UNVERIFIED', '收款单出现尚未验证的状态，已停止生成');
+  }
   if (record?.is_invalid === true) return false;
   const status = String(record?.status ?? '').toUpperCase();
   if (INVALID_STATUSES.has(status)) return false;
@@ -107,11 +110,6 @@ function sourceEvent(record, kind) {
       dates: ['bill_date'],
       amounts: ['total_amt'],
       label: '收款单'
-    },
-    return: {
-      dates: ['bill_date', 'return_date'],
-      amounts: ['refund_amt', 'pay_amt', 'bill_pay_amt'],
-      label: '销售退货单'
     }
   };
   const contract = contracts[kind];
@@ -121,10 +119,9 @@ function sourceEvent(record, kind) {
   }
   const amount = pickField(record, contract.amounts, contract.label);
   let cents = amountToCents(amount.value, `${contract.label}.${amount.field}`);
-  if (kind !== 'return' && cents < 0) {
+  if (cents < 0) {
     throw new PosterError('NEGATIVE_COLLECTION', `${contract.label}.${amount.field} 不应为负数`);
   }
-  if (kind === 'return') cents = -Math.abs(cents);
   return {
     date: String(date.value),
     cents,
@@ -140,10 +137,17 @@ export function aggregateSources(sources, start, end) {
     throw new PosterError('INVALID_RANGE', `日期范围无效：${start} 至 ${end}`);
   }
   const events = [];
+  const returns = sources.returns || [];
+  if (!Array.isArray(returns)) throw new PosterError('INVALID_SOURCE', 'return 数据不是数组');
+  if (returns.length > 0) {
+    throw new PosterError(
+      'SALES_RETURN_UNVERIFIED',
+      '当前存在销售退货，但实际退款字段尚未完成真实数据验证，已停止生成'
+    );
+  }
   const definitions = [
     ['sale', sources.sales || []],
-    ['receipt', sources.receipts || []],
-    ['return', sources.returns || []]
+    ['receipt', sources.receipts || []]
   ];
   for (const [kind, rows] of definitions) {
     if (!Array.isArray(rows)) throw new PosterError('INVALID_SOURCE', `${kind} 数据不是数组`);
