@@ -1,0 +1,13 @@
+{
+  "name": "business-posters-skill",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate:calendar": "node scripts/generate-calendar.mjs",
+    "generate:monthly": "node scripts/generate-monthly-report.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "sharp": "0.35.3"
+  }
+}

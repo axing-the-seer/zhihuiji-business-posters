@@ -1,0 +1,5 @@
+interface:
+  display_name: "经营海报"
+  short_description: "读取智慧记经营数据，生成经营日历或三页经营月报"
+  brand_color: "#1677FF"
+  default_prompt: "使用 $business-posters 生成本月三页经营月报，并把图片保存到当前工作目录。"

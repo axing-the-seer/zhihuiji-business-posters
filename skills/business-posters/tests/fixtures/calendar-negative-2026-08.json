@@ -1,0 +1,26 @@
+{
+  "shopName": "退款边界测试店铺",
+  "fetchedAt": "2026-08-22T06:00:00.000Z",
+  "currentSources": {
+    "sales": [
+      {"id": 1, "bill_date": "2026-08-01", "bill_pay_amt": 120, "status": "NORMAL", "is_invalid": false},
+      {"id": 2, "bill_date": "2026-08-03", "bill_pay_amt": 80, "status": "NORMAL", "is_invalid": false},
+      {"id": 3, "bill_date": "2026-08-05", "bill_pay_amt": 150, "status": "NORMAL", "is_invalid": false}
+    ],
+    "receipts": [
+      {"id": 4, "bill_date": "2026-08-06", "bill_amt": 60}
+    ],
+    "returns": [
+      {"id": 5, "bill_date": "2026-08-02", "pay_amt": 180},
+      {"id": 6, "bill_date": "2026-08-07", "pay_amt": 300},
+      {"id": 7, "bill_date": "2026-08-08", "pay_amt": 20}
+    ]
+  },
+  "previousSources": {
+    "sales": [
+      {"id": 101, "bill_date": "2026-07-01", "bill_pay_amt": 500, "status": "NORMAL", "is_invalid": false}
+    ],
+    "receipts": [],
+    "returns": []
+  }
+}

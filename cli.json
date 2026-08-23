@@ -1,0 +1,43 @@
+{
+  "init": {
+    "darwin": "npm install -g @co-ailit/ailit-cli@0.8.0",
+    "linux": "npm install -g @co-ailit/ailit-cli@0.8.0",
+    "win32": "npm install -g @co-ailit/ailit-cli@0.8.0"
+  },
+  "auth": {
+    "darwin": "ailit auth login --workbuddy-auto-return",
+    "linux": "ailit auth login --workbuddy-auto-return",
+    "win32": "ailit auth login --workbuddy-auto-return"
+  },
+  "unAuth": {
+    "darwin": "ailit auth logout",
+    "linux": "ailit auth logout",
+    "win32": "ailit auth logout"
+  },
+  "status": {
+    "darwin": "ailit doctor --format json",
+    "linux": "ailit doctor --format json",
+    "win32": "ailit doctor --format json"
+  },
+  "statusMatchJson": {
+    "allPass": true
+  },
+  "authUrlDomain": "space.zhihuiji.cn",
+  "authWaitForExit": true,
+  "env": {
+    "AILIT_HOME": "$HOME/.workbuddy/connectors/zhihuiji-business-posters/ailit"
+  },
+  "runtime": {
+    "type": "node",
+    "version": ">=18.0.0"
+  },
+  "versionCheck": {
+    "command": {
+      "darwin": "ailit --version",
+      "linux": "ailit --version",
+      "win32": "ailit --version"
+    },
+    "minVersion": "0.8.0",
+    "versionPattern": "(\\d+\\.\\d+\\.\\d+)"
+  }
+}
