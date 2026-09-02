@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { aggregateSources, buildCalendarModel, amountToCents, collectionRanges, daysInMonth, isIsoDate, shouldCrossCheckCurrentSummary } from '../scripts/calendar-core.mjs';
-import { calendarGrid, renderCalendarSvg } from '../scripts/calendar-render.mjs';
+import { calendarGrid, renderCalendarPng, renderCalendarSvg } from '../scripts/calendar-render.mjs';
 
 test('金额按分精确转换并四舍五入', () => {
   assert.equal(amountToCents('0.1'), 10);
@@ -187,6 +190,10 @@ test('六行日历的最后一行保持在指标卡上方', () => {
 
 test('最终页面不含占位符或异常提示词', () => {
   const svg = renderCalendarSvg(emptyHistoricalModel('2024-12'));
+  assert.match(svg, /<image\b/);
+  assert.doesNotMatch(svg, /file:\/\/|href="assets\//);
+  assert.match(svg, /WorkBuddy/);
+  assert.match(svg, /智慧记/);
   const inspectable = svg.replace(/data:image\/[a-z+.-]+;base64,[^"]+/gi, '');
   const forbidden = [
     /\{(?:店铺名|月份|年份|日期|更新时间)\}/,
@@ -195,4 +202,19 @@ test('最终页面不含占位符或异常提示词', () => {
     /ChatGPT|Claude|Gemini/
   ];
   for (const pattern of forbidden) assert.doesNotMatch(inspectable, pattern);
+});
+
+test('经营日历不会覆盖已有文件', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'calendar-no-overwrite-'));
+  const output = join(directory, '经营日历.png');
+  writeFileSync(output, 'existing-calendar', 'utf8');
+  try {
+    await assert.rejects(
+      renderCalendarPng(emptyHistoricalModel('2026-07'), output),
+      (error) => error.code === 'OUTPUT_EXISTS'
+    );
+    assert.equal(readFileSync(output, 'utf8'), 'existing-calendar');
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });

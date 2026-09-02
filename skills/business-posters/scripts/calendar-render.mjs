@@ -1,11 +1,10 @@
-import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, renameSync, rmSync } from 'node:fs';
+import { constants, copyFileSync, existsSync, readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { dirname, extname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
 import { formatMoney, PosterError } from './calendar-core.mjs';
+import { embeddedImageData } from './embedded-assets.mjs';
+import { loadSharp } from './render-runtime.mjs';
 
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const SKILL_DIR = resolve(SCRIPT_DIR, '..');
 const FONT_STACK = 'PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif';
 
 function esc(value) {
@@ -15,13 +14,6 @@ function esc(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&apos;');
-}
-
-function imageData(relativePath) {
-  const path = resolve(SKILL_DIR, relativePath);
-  const extension = extname(path).slice(1).toLowerCase();
-  const mime = extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : 'image/png';
-  return `data:${mime};base64,${readFileSync(path).toString('base64')}`;
 }
 
 function shortText(value, max) {
@@ -155,10 +147,10 @@ export function renderCalendarSvg(model) {
   const highestDate = highest.date ? `${Number(highest.date.slice(5, 7))}月${Number(highest.date.slice(8, 10))}日` : '—';
   const avg = model.metrics.average_cents === null ? '—' : formatMoney(model.metrics.average_cents);
   const operatingRatio = `${(model.metrics.operating_ratio * 100).toFixed(1)}%`;
-  const logoWorkbuddy = imageData('assets/brand/workbuddy-logo.png');
-  const logoZhihuiji = imageData('assets/brand/zhihuiji-logo.png');
-  const qr = imageData('assets/brand/zhihuiji-qr.png');
-  const hero = imageData('assets/calendar/header-store-calendar.png');
+  const logoWorkbuddy = embeddedImageData('assets/brand/workbuddy-logo.png');
+  const logoZhihuiji = embeddedImageData('assets/brand/zhihuiji-logo.png');
+  const qr = embeddedImageData('assets/brand/zhihuiji-qr.png');
+  const hero = embeddedImageData('assets/calendar/header-store-calendar.png');
   const shop = shortText(model.shop.name, 14);
   const deltaLabel = model.comparison.delta_cents >= 0 ? '增加' : '减少';
   const totalColor = model.metrics.total_cents < 0 ? '#E24B5B' : '#1769FF';
@@ -248,14 +240,18 @@ function verifyPng(path) {
 }
 
 export async function renderCalendarPng(model, outputPath, { keepSvg = false } = {}) {
-  let sharp;
-  try {
-    ({ default: sharp } = await import('sharp'));
-  } catch (error) {
-    throw new PosterError('RENDERER_MISSING', '经营海报渲染组件未初始化', { cause_code: error?.code || 'UNKNOWN' });
-  }
   const absoluteOutput = resolve(outputPath);
   if (extname(absoluteOutput).toLowerCase() !== '.png') throw new PosterError('OUTPUT_EXTENSION', '输出文件必须以 .png 结尾');
+  const savedSvg = keepSvg ? absoluteOutput.replace(/\.png$/i, '.svg') : null;
+  for (const target of [absoluteOutput, savedSvg].filter(Boolean)) {
+    if (existsSync(target)) throw new PosterError('OUTPUT_EXISTS', `目标位置已经存在同名文件：${target}`);
+  }
+  let sharp;
+  try {
+    sharp = await loadSharp();
+  } catch (error) {
+    throw new PosterError('RENDERER_MISSING', '图片渲染组件未初始化', { cause_code: error?.code || 'UNKNOWN' });
+  }
   mkdirSync(dirname(absoluteOutput), { recursive: true });
   const work = mkdtempSync(join(tmpdir(), 'ailit-calendar-'));
   const svgPath = join(work, 'calendar.svg');
@@ -269,11 +265,9 @@ export async function renderCalendarPng(model, outputPath, { keepSvg = false } =
     throw new PosterError('RENDER_FAILED', `PNG 渲染失败：${error.message}`);
   }
   verifyPng(pngPath);
-  renameSync(pngPath, absoluteOutput);
-  let savedSvg = null;
+  copyFileSync(pngPath, absoluteOutput, constants.COPYFILE_EXCL);
   if (keepSvg) {
-    savedSvg = absoluteOutput.replace(/\.png$/i, '.svg');
-    renameSync(svgPath, savedSvg);
+    copyFileSync(svgPath, savedSvg, constants.COPYFILE_EXCL);
   }
   rmSync(work, { recursive: true, force: true });
   return { png: absoluteOutput, svg: savedSvg };

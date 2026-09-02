@@ -34,7 +34,7 @@ ailit report all --format json
 
 ## 已验证字段
 
-基于 `ailit 0.8.0`、2026-08-22 的已登录测试店铺实测。
+基于 `ailit 0.8.0–0.8.1` 的已登录测试店铺实测；2026-08-25 已用 0.8.1 复核下列命令和字段结构。
 
 - 销售趋势：`report sale-stat bill.list[].bill_date`、`total_amt`。
 - 销售单：`sale list.list[].id`、`bill_date`、`total_amt`、`total_pay_amt`、`bill_pay_amt`、`owe_amt`、`settlement_status`、`acct_name`、`status`、`is_invalid`。其中 `bill_pay_amt` 是开单即时实收，`total_pay_amt` 是销售单当前累计已收；后者不用于期间到账聚合。

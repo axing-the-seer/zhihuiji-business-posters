@@ -22,7 +22,7 @@ ailit sale return-list -s <start> -e <end> -p <page> -z 100 --format json
 ailit report all --format json
 ```
 
-`sale list` 使用 `bill_date` 与 `bill_pay_amt`，只计 `status=NORMAL` 且 `is_invalid=false` 的记录。`bill_pay_amt` 是开销售单当时的即时实收；`total_pay_amt` 是销售单当前累计已收快照，不能按原销售日期充当现金流，也不能与 `receipt list` 相加。`ailit v0.8.0` 实测分页外层为 `total/list`，销售单已实测包含 `id/bill_date/total_amt/total_pay_amt/bill_pay_amt/owe_amt/settlement_status/acct_name/status/is_invalid`。
+`sale list` 使用 `bill_date` 与 `bill_pay_amt`，只计 `status=NORMAL` 且 `is_invalid=false` 的记录。`bill_pay_amt` 是开销售单当时的即时实收；`total_pay_amt` 是销售单当前累计已收快照，不能按原销售日期充当现金流，也不能与 `receipt list` 相加。`ailit v0.8.0–v0.8.1` 实测分页外层为 `total/list`，销售单已实测包含 `id/bill_date/total_amt/total_pay_amt/bill_pay_amt/owe_amt/settlement_status/acct_name/status/is_invalid`。
 
 2026-08-22 已取得真实非空收款单并用同一稳定 `id` 对照 `receipt list/get`：收款日期为 `bill_date`，实际收款为 `total_amt`，状态为数值 `status=1`；账户拆分只在 `receipt get.items[]` 中提供，字段为 `acct_id/acct_name/acct_type/amt`。日历与月报都必须逐张执行列表/详情金额、日期、账户合计以及优惠和预存款检查。仅接受数值 `status=1`；出现其他状态时停止。当前样本 `preferential_amt/prepaid_amt` 均为 0；首次遇到非零值时停止。退货单仍缺非空样本，本期或对比期出现任何退货记录时直接停止生成，取得真实样本并完成 `return-list/get` 审计后才能启用退款计算。
 
@@ -31,7 +31,7 @@ ailit report all --format json
 - “销售单本次实收/开单时收款”：只取 `sale list.bill_pay_amt`。
 - “销售单当前已收/未收”：取 `total_pay_amt/owe_amt/settlement_status`，这是单据状态快照，不是期间到账。
 - “后续回款/收款单”：只取 `receipt list` 经审计后的字段。
-- “收款日历/某日到账/某月收款”：取 `bill_pay_amt + 独立收款单实际收款 - 实际退款`。
+- “经营日历/某日到账/某月收款”：取 `bill_pay_amt + 独立收款单实际收款 - 实际退款`。
 - 禁止用 `total_pay_amt + receipt list` 计算到账；这会重复计算后续回款。
 
 ## 分页与交叉校验

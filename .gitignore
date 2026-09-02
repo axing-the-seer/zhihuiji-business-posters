@@ -18,5 +18,5 @@ node_modules/
 *.partial-*
 真实经营数据/
 本地经营数据/
-对账单/
 .release-staging/
+.runtime/

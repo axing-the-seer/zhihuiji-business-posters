@@ -1,5 +1,5 @@
 interface:
-  display_name: "经营海报"
-  short_description: "读取智慧记AI进销存数据，生成经营日历或三页经营月报"
+  display_name: "智慧记图报"
+  short_description: "读取智慧记真实经营数据，生成适合手机查看的经营日历和经营月报"
   brand_color: "#1677FF"
-  default_prompt: "使用 $business-posters 生成本月三页经营月报，并把图片保存到当前工作目录。"
+  default_prompt: "看看这个月整体经营情况"

@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { PosterError, buildCalendarModel, collectionRanges, formatMoney, todayInTimeZone, amountToCents, shouldCrossCheckCurrentSummary } from './calendar-core.mjs';
 import { renderCalendarPng } from './calendar-render.mjs';
+import { preflightEnvironment } from './preflight.mjs';
 import {
   assertNoUnverifiedReturns,
-  ensureAilitHealthy,
   fetchPaged,
   fetchValidatedReceipts,
-  runAilitJson,
-  sanitizeCliError
+  runAilitJson
 } from './ailit-runtime.mjs';
+import { userMessageFor } from './user-errors.mjs';
 
 function parseArgs(argv) {
   const options = { keepSvg: false, fixture: null, dataOut: null, month: null, asOf: null, output: null, shopName: null };
@@ -29,20 +29,6 @@ function parseArgs(argv) {
     } else throw new PosterError('UNKNOWN_ARGUMENT', `未知参数：${arg}`);
   }
   return options;
-}
-
-function userMessageFor(error) {
-  const code = error instanceof PosterError ? error.code : 'UNEXPECTED';
-  if (code === 'AILIT_MISSING' || code === 'RENDERER_MISSING') return '经营海报服务尚未完成初始化，请重新安装或连接“经营海报”后再试。';
-  if (code === 'SHOP_MISSING') return '当前还没有选择经营店铺，请先在智慧记中选择店铺。';
-  if (code === 'SALES_RETURN_UNVERIFIED') return '本月或对比月份存在销售退货，当前版本暂时无法准确计入。为避免金额错误，本次没有生成经营日历。';
-  if (code.startsWith('RECEIPT_')) return '部分收款记录暂时无法准确核对。为避免金额错误，本次没有生成经营日历。';
-  if (['MISSING_ARGUMENT', 'UNKNOWN_ARGUMENT', 'INVALID_MONTH', 'FUTURE_MONTH'].includes(code)) return error.message;
-  if (code.startsWith('AILIT_')) return '智慧记数据暂时读取失败，请稍后重试。';
-  if (code.startsWith('PAGINATION_') || code.startsWith('CROSS_CHECK_') || code.endsWith('_SHAPE')) {
-    return '部分经营数据未通过一致性检查，为避免生成错误日历，本次没有出图。';
-  }
-  return '经营日历生成失败，请稍后重新生成。';
 }
 
 function fetchSources(range) {
@@ -70,7 +56,6 @@ function currentSalePayCents(sales) {
 }
 
 function liveInput(month, asOf) {
-  ensureAilitHealthy();
   const auth = runAilitJson(['auth', 'status']);
   if (!auth.defaultShop && !auth.merchant) throw new PosterError('SHOP_MISSING', 'ailit 未返回默认店铺');
   const ranges = collectionRanges(month, asOf);
@@ -101,18 +86,24 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const asOf = options.asOf || todayInTimeZone();
   const month = options.month || asOf.slice(0, 7);
+  const output = resolve(options.output || defaultOutput(month));
+  const dataPath = options.dataOut ? resolve(options.dataOut) : null;
+  const svgPath = options.keepSvg ? output.replace(/\.png$/i, '.svg') : null;
+  for (const target of [output, svgPath, dataPath].filter(Boolean)) {
+    if (existsSync(target)) throw new PosterError('OUTPUT_EXISTS', `目标位置已经存在同名文件：${target}`);
+  }
+  await preflightEnvironment({ requireAilit: !options.fixture });
   const input = options.fixture ? fixtureInput(options.fixture) : liveInput(month, asOf);
   if (options.shopName) input.shopName = options.shopName;
   const model = buildCalendarModel({ month, asOf, ...input });
-  const output = resolve(options.output || defaultOutput(month));
   const artifacts = await renderCalendarPng(model, output, { keepSvg: options.keepSvg });
-  if (options.dataOut) {
-    const dataPath = resolve(options.dataOut);
+  if (dataPath) {
     mkdirSync(dirname(dataPath), { recursive: true });
-    writeFileSync(dataPath, `${JSON.stringify(model, null, 2)}\n`, 'utf8');
+    writeFileSync(dataPath, `${JSON.stringify(model, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
   }
   console.log(JSON.stringify({
     ok: true,
+    user_message: `${model.period.year}年${model.period.month_number}月经营日历已生成。`,
     output: artifacts.png,
     svg: artifacts.svg,
     period: model.period.month,
@@ -127,8 +118,8 @@ try {
   await main();
 } catch (error) {
   const payload = error instanceof PosterError
-    ? { ok: false, code: error.code, user_message: userMessageFor(error), internal_error: sanitizeCliError(error.message), details: error.details }
-    : { ok: false, code: 'UNEXPECTED', user_message: userMessageFor(error), internal_error: sanitizeCliError(error?.message || String(error)) };
+    ? { ok: false, user_message: userMessageFor(error, 'calendar') }
+    : { ok: false, user_message: userMessageFor(error, 'calendar') };
   console.error(JSON.stringify(payload, null, 2));
   process.exit(1);
 }

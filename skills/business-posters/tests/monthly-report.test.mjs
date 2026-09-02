@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildMonthlyReportModel, standardizeInventoryRisks } from '../scripts/monthly-report-core.mjs';
@@ -73,6 +73,28 @@ test('真实收款单金额和账户明细进入实收与渠道', () => {
   ]);
 });
 
+test('完整经营场景同时覆盖待收、后续收款、进货、客户欠款和库存风险', () => {
+  const current = period({ date: '2026-07-01', sales: 100, paid: 60, expense: 60, purchase: 50 });
+  current.receipts = [{
+    id: 'r-full', bill_date: '2026-07-02', total_amt: 20, status: 1,
+    receipt_accounts: [{ acct_name: '现金', amt: 20 }]
+  }];
+  const model = buildMonthlyReportModel(input({
+    current,
+    snapshots: {
+      debts: { total: 1, rows: [{ id: 'c-debt', name: '测试欠款客户', cur_amt: 120 }] },
+      lowStock: [{ id: 'p-low', name: '低库存商品', cur_stock: 3, unit_name: '件', cost_prc: 2 }],
+      outOfStock: [{ id: 'p-out', name: '缺货商品', cur_stock: 0, unit_name: '件', cost_prc: 5 }]
+    }
+  }));
+  assert.equal(model.overview.receipts_cents, 8000);
+  assert.equal(model.overview.outstanding_cents, 4000);
+  assert.equal(model.purchase.total_amount_cents, 5000);
+  assert.equal(model.customers.debt_total_cents, 12000);
+  assert.equal(model.risks.low_stock.length, 1);
+  assert.equal(model.risks.out_of_stock.length, 1);
+});
+
 test('月报拒绝未知收款状态和本期或对比期退货', () => {
   const unknownReceipt = period({ date: '2026-07-01' });
   unknownReceipt.receipts = [{ id: 'r1', bill_date: '2026-07-02', total_amt: 20, status: 2, receipt_accounts: [] }];
@@ -114,7 +136,7 @@ test('进货字段缺失时不将失败渲染为零', () => {
   assert.throws(() => buildMonthlyReportModel(input({ current })), (error) => error.code === 'UNSUPPORTED_SOURCE_FIELDS');
 });
 
-test('真实零数据保留明确零状态并可渲染三页', async () => {
+test('真实零数据保留明确零状态并可渲染全部页面', async () => {
   const current = period({ date: '2026-07-01', sales: 0, paid: 0, expense: 0, purchase: 0 });
   const previous = period({ date: '2026-06-01', sales: 0, paid: 0, expense: 0, purchase: 0 });
   const model = buildMonthlyReportModel(input({ current, previous }));
@@ -124,6 +146,10 @@ test('真实零数据保留明确零状态并可渲染三页', async () => {
   assert.equal(model.purchase.total_amount_cents, 0);
   const pages = renderMonthlyReportSvgs(model);
   assert.deepEqual(pages.map((page) => page.title), ['经营概览', '商品与库存', '收款与客户']);
+  for (const page of pages) {
+    assert.match(page.svg, /<image\b/);
+    assert.doesNotMatch(page.svg, /file:\/\/|href="assets\//);
+  }
   assert.match(pages[0].svg, /本月销售额为 0/);
   assert.match(pages[1].svg, /本月无进货记录/);
   const directory = mkdtempSync(join(tmpdir(), 'monthly-report-test-'));
@@ -138,6 +164,24 @@ test('真实零数据保留明确零状态并可渲染三页', async () => {
       assert.equal(png.readUInt32BE(16), 1080);
       assert.equal(png.readUInt32BE(20), 1620);
     }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('经营月报发现任一同名文件时不会生成或覆盖其他页面', async () => {
+  const model = buildMonthlyReportModel(input());
+  const directory = mkdtempSync(join(tmpdir(), 'monthly-no-overwrite-'));
+  const existing = join(directory, '经营月报-2026-07-01-经营概览.png');
+  const secondPage = join(directory, '经营月报-2026-07-02-商品与库存.png');
+  writeFileSync(existing, 'existing-monthly', 'utf8');
+  try {
+    await assert.rejects(
+      renderMonthlyReportPngSet(model, directory),
+      (error) => error.code === 'OUTPUT_EXISTS'
+    );
+    assert.equal(readFileSync(existing, 'utf8'), 'existing-monthly');
+    assert.equal(existsSync(secondPage), false);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

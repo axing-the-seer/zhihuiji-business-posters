@@ -1,5 +1,6 @@
 {
   "name": "business-posters-skill",
+  "version": "1.5.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -8,7 +9,6 @@
   "scripts": {
     "generate:calendar": "node scripts/generate-calendar.mjs",
     "generate:monthly": "node scripts/generate-monthly-report.mjs",
-    "statement:export": "node scripts/reconcile-and-export-statement.mjs",
     "test": "node --test tests/*.test.mjs"
   },
   "dependencies": {

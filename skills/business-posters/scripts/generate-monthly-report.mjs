@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import {
   PosterError,
   amountToCents,
@@ -10,14 +10,14 @@ import {
 } from './calendar-core.mjs';
 import { buildMonthlyReportModel } from './monthly-report-core.mjs';
 import { renderMonthlyReportPngSet } from './monthly-report-render.mjs';
+import { preflightEnvironment } from './preflight.mjs';
 import {
   assertNoUnverifiedReturns,
-  ensureAilitHealthy,
   fetchPaged,
   fetchValidatedReceipts,
-  runAilitJson,
-  sanitizeCliError
+  runAilitJson
 } from './ailit-runtime.mjs';
+import { userMessageFor } from './user-errors.mjs';
 
 function parseArgs(argv) {
   const options = {
@@ -53,26 +53,6 @@ function parseArgs(argv) {
   return options;
 }
 
-function userMessageFor(error) {
-  const code = error instanceof PosterError ? error.code : 'UNEXPECTED';
-  if (code === 'AILIT_MISSING' || code === 'RENDERER_MISSING') return '经营海报服务尚未完成初始化，请重新安装或连接“经营海报”后再试。';
-  if (code === 'SHOP_MISSING') return '当前还没有选择经营店铺，请先在智慧记中选择店铺。';
-  if (code === 'SALES_RETURN_UNVERIFIED') return '本月或对比月份存在销售退货，当前版本暂时无法准确计入。为避免金额错误，本次没有生成经营月报。';
-  if (code.startsWith('RECEIPT_')) return '部分收款记录暂时无法准确核对。为避免金额错误，本次没有生成经营月报。';
-  if (['MISSING_ARGUMENT', 'UNKNOWN_ARGUMENT', 'INVALID_ARGUMENT', 'INVALID_MONTH', 'FUTURE_MONTH'].includes(code)) {
-    return error.message;
-  }
-  if (code.startsWith('AILIT_')) return '智慧记数据暂时读取失败，请稍后重试。';
-  if (code.startsWith('PAGINATION_')
-    || code.startsWith('CROSS_CHECK_')
-    || code.endsWith('_SHAPE')
-    || code.endsWith('_MISMATCH')
-    || code === 'UNSUPPORTED_SOURCE_FIELDS') {
-    return '部分经营数据未通过一致性检查，为避免生成错误月报，本次没有出图。';
-  }
-  return '经营月报生成失败，请稍后重新生成。';
-}
-
 function fetchPeriod(range) {
   const date = { start: range.start, end: range.end };
   const returns = fetchPaged(['sale', 'return-list'], { ...date, label: '销售退货单' }).rows;
@@ -92,7 +72,6 @@ function fetchPeriod(range) {
 }
 
 function liveInput(month, asOf) {
-  ensureAilitHealthy();
   const auth = runAilitJson(['auth', 'status']);
   const shopName = auth.defaultShop || auth.merchant;
   if (!shopName) throw new PosterError('SHOP_MISSING', 'ailit 未返回默认店铺');
@@ -138,6 +117,17 @@ async function main() {
   if (!['clean', 'compare'].includes(options.page2Variant)) throw new PosterError('INVALID_ARGUMENT', '--page2-variant 只支持 clean 或 compare');
   const asOf = options.asOf || todayInTimeZone();
   const month = options.month || asOf.slice(0, 7);
+  const outputDir = resolve(options.outputDir || defaultOutputDir(month));
+  const dataPath = options.dataOut ? resolve(options.dataOut) : null;
+  const pageSlugs = ['01-经营概览', '02-商品与库存', '03-收款与客户'];
+  const outputTargets = pageSlugs.flatMap((slug) => [
+    join(outputDir, `经营月报-${month}-${slug}.png`),
+    ...(options.keepSvg ? [join(outputDir, `经营月报-${month}-${slug}.svg`)] : [])
+  ]);
+  for (const target of [...outputTargets, dataPath].filter(Boolean)) {
+    if (existsSync(target)) throw new PosterError('OUTPUT_EXISTS', `目标位置已经存在同名文件：${target}`);
+  }
+  await preflightEnvironment();
   const input = liveInput(month, asOf);
   const model = buildMonthlyReportModel({ month, asOf, ...input });
   if (model.period.relation === 'current' && asOf === todayInTimeZone()) {
@@ -146,15 +136,14 @@ async function main() {
     });
   }
   if (options.shopName) model.shop.name = options.shopName;
-  const outputDir = resolve(options.outputDir || defaultOutputDir(month));
   const artifacts = await renderMonthlyReportPngSet(model, outputDir, { keepSvg: options.keepSvg, page2Variant: options.page2Variant });
-  if (options.dataOut) {
-    const dataPath = resolve(options.dataOut);
+  if (dataPath) {
     mkdirSync(dirname(dataPath), { recursive: true });
-    writeFileSync(dataPath, `${JSON.stringify(model, null, 2)}\n`, 'utf8');
+    writeFileSync(dataPath, `${JSON.stringify(model, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
   }
   console.log(JSON.stringify({
     ok: true,
+    user_message: `${model.period.year}年${model.period.month_number}月经营月报已生成。`,
     poster_type: model.poster_type,
     period: model.period.month,
     as_of: model.period.as_of,
@@ -171,8 +160,8 @@ try {
   await main();
 } catch (error) {
   const payload = error instanceof PosterError
-    ? { ok: false, code: error.code, user_message: userMessageFor(error), internal_error: sanitizeCliError(error.message), details: error.details }
-    : { ok: false, code: 'UNEXPECTED', user_message: userMessageFor(error), internal_error: sanitizeCliError(error?.message || String(error)) };
+    ? { ok: false, user_message: userMessageFor(error, 'monthly') }
+    : { ok: false, user_message: userMessageFor(error, 'monthly') };
   console.error(JSON.stringify(payload, null, 2));
   process.exit(1);
 }

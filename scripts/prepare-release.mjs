@@ -1,8 +1,14 @@
 #!/usr/bin/env node
-import { createHash } from 'node:crypto';
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  assertNoLegacyFiles,
+  assertNoSecrets,
+  assertPublicSkill,
+  assertSourceVersions,
+  manifestFor
+} from './release-guard.mjs';
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const targetArg = process.argv[2];
@@ -12,10 +18,13 @@ if (target === projectRoot || target === dirname(projectRoot) || basename(target
 if (existsSync(target)) throw new Error('发布暂存位置必须是一个尚不存在的目录');
 
 const allowlist = [
-  'connector-meta.json',
-  'cli.json',
+  '.codebuddy-plugin/plugin.json',
+  'docs/DEVELOPMENT.md',
+  'docs/screenshots',
+  'hooks/hooks.json',
   'icon.png',
   'README.md',
+  'scripts/install-dependencies.mjs',
   'skills/business-posters/SKILL.md',
   'skills/business-posters/agents',
   'skills/business-posters/assets',
@@ -49,6 +58,7 @@ const forbidden = [
   `${sep}fixtures${sep}`,
   `${sep}dev${sep}`,
   `${sep}node_modules${sep}`,
+  `${sep}.runtime${sep}`,
   `${sep}经营海报输出${sep}`
 ];
 const files = filesUnder(target);
@@ -58,9 +68,14 @@ for (const file of files) {
   }
 }
 
-const manifest = files.map((file) => ({
-  path: relative(target, file).split(sep).join('/'),
-  sha256: createHash('sha256').update(readFileSync(file)).digest('hex')
-}));
+assertPublicSkill(join(target, 'skills/business-posters/SKILL.md'));
+assertNoLegacyFiles(target);
+assertNoSecrets(target);
+const readme = readFileSync(join(target, 'README.md'), 'utf8');
+if (/经营日报|智慧记经营参谋|客户欠款|导出对账单|PDF/i.test(readme)) {
+  throw new Error('GitHub README 仍包含已移除功能');
+}
+const version = assertSourceVersions(projectRoot);
+const manifest = manifestFor(target);
 writeFileSync(join(target, 'RELEASE_MANIFEST.json'), `${JSON.stringify({ schema_version: 1, files: manifest }, null, 2)}\n`, 'utf8');
-console.log(JSON.stringify({ ok: true, target, file_count: manifest.length + 1 }, null, 2));
+console.log(JSON.stringify({ ok: true, version, target, file_count: manifest.length + 1 }, null, 2));

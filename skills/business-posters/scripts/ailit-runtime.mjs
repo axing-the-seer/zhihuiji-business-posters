@@ -2,6 +2,69 @@ import { spawnSync } from 'node:child_process';
 import { PosterError, amountToCents } from './calendar-core.mjs';
 
 const MAX_CLI_ERROR_LENGTH = 1200;
+const MAX_TRANSIENT_ATTEMPTS = 3;
+const AILIT_TIMEOUT_MS = 45000;
+const TRANSIENT_NETWORK_ERROR = /(bad gateway|eof|econnreset|etimedout|timeout|tls handshake|temporary failure|connection (?:closed|reset)|certificate is valid for \*\.ias\.tencent-cloud\.net)/i;
+export const MIN_AILIT_VERSION = '0.8.1';
+export const REQUIRED_AILIT_CAPABILITIES = Object.freeze([
+  ['auth', 'status'],
+  ['sale', 'list'],
+  ['sale', 'return-list'],
+  ['receipt', 'list'],
+  ['receipt', 'get'],
+  ['report', 'sale-stat'],
+  ['report', 'fund-profit'],
+  ['report', 'purchase-stat'],
+  ['report', 'operator-achieve'],
+  ['report', 'all'],
+  ['purchase', 'list'],
+  ['customer', 'debt'],
+  ['stock', 'low'],
+  ['stock', 'out']
+]);
+
+export function parseAilitVersion(value) {
+  const match = String(value ?? '').match(/(?:^|\s)v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?(?:\s|$)/);
+  if (!match) return null;
+  return match.slice(1, 4).map(Number);
+}
+
+export function versionAtLeast(actual, minimum = MIN_AILIT_VERSION) {
+  const actualParts = Array.isArray(actual) ? actual : parseAilitVersion(actual);
+  const minimumParts = parseAilitVersion(minimum);
+  if (!actualParts || !minimumParts) return false;
+  for (let index = 0; index < 3; index += 1) {
+    if (actualParts[index] > minimumParts[index]) return true;
+    if (actualParts[index] < minimumParts[index]) return false;
+  }
+  return true;
+}
+
+function runAilitLocal(args, timeout = 8000) {
+  const result = spawnSync('ailit', args, {
+    encoding: 'utf8',
+    maxBuffer: 4 * 1024 * 1024,
+    timeout
+  });
+  if (result.error?.code === 'ENOENT') throw new PosterError('AILIT_MISSING', '未找到 ailit');
+  return result;
+}
+
+export function ensureAilitCompatibility() {
+  const versionResult = runAilitLocal(['--version']);
+  const versionText = `${versionResult.stdout || ''} ${versionResult.stderr || ''}`.trim();
+  const version = parseAilitVersion(versionText);
+  if (versionResult.status !== 0 || !versionAtLeast(version)) {
+    throw new PosterError('AILIT_UNSUPPORTED', `ailit 版本不满足 ${MIN_AILIT_VERSION}`);
+  }
+  for (const command of REQUIRED_AILIT_CAPABILITIES) {
+    const result = runAilitLocal([...command, '--help']);
+    if (result.status !== 0) {
+      throw new PosterError('AILIT_CAPABILITY_MISSING', `ailit 缺少命令：${command.join(' ')}`);
+    }
+  }
+  return { version: version.join('.'), capabilities: REQUIRED_AILIT_CAPABILITIES.length };
+}
 
 export function sanitizeCliError(value, maxLength = MAX_CLI_ERROR_LENGTH) {
   let text = String(value ?? '').replace(/\s+/g, ' ').trim();
@@ -15,16 +78,22 @@ export function sanitizeCliError(value, maxLength = MAX_CLI_ERROR_LENGTH) {
 }
 
 function runAilitRaw(args, label) {
-  const result = spawnSync('ailit', [...args, '--format', 'json'], {
-    encoding: 'utf8',
-    maxBuffer: 64 * 1024 * 1024
-  });
-  if (result.error?.code === 'ENOENT') throw new PosterError('AILIT_MISSING', '未找到 ailit CLI');
-  if (result.status !== 0) {
-    const message = sanitizeCliError(result.stderr || result.stdout);
-    throw new PosterError('AILIT_FAILED', `${label} 读取失败：${message}`);
+  let lastResult = null;
+  for (let attempt = 1; attempt <= MAX_TRANSIENT_ATTEMPTS; attempt += 1) {
+    const result = spawnSync('ailit', [...args, '--format', 'json'], {
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+      timeout: AILIT_TIMEOUT_MS
+    });
+    if (result.error?.code === 'ENOENT') throw new PosterError('AILIT_MISSING', '未找到 ailit CLI');
+    if (result.status === 0) return result.stdout;
+    lastResult = result;
+    const rawError = `${result.error?.message || ''} ${result.stderr || ''} ${result.stdout || ''}`;
+    if (!TRANSIENT_NETWORK_ERROR.test(rawError) || attempt === MAX_TRANSIENT_ATTEMPTS) break;
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, attempt * 350);
   }
-  return result.stdout;
+  const message = sanitizeCliError(lastResult?.error?.message || lastResult?.stderr || lastResult?.stdout);
+  throw new PosterError('AILIT_FAILED', `${label} 读取失败：${message}`);
 }
 
 export function parseLeadingJson(value) {
@@ -74,15 +143,14 @@ export function runAilitJsonWithTrailing(args, { label = args.slice(0, 3).join('
 }
 
 export function ensureAilitHealthy() {
+  const compatibility = ensureAilitCompatibility();
   let lastError = null;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const doctor = runAilitJson(['doctor'], { label: '连接检查' });
-      if (doctor.allPass === true) return;
-      lastError = new PosterError('AILIT_UNHEALTHY', '智慧记连接检查未通过');
-    } catch (error) {
-      lastError = error;
-    }
+  try {
+    const doctor = runAilitJson(['doctor'], { label: '连接检查' });
+    if (doctor.allPass === true) return compatibility;
+    lastError = new PosterError('AILIT_UNHEALTHY', '智慧记连接检查未通过');
+  } catch (error) {
+    lastError = error;
   }
   if (lastError?.code === 'AILIT_MISSING') throw lastError;
   throw new PosterError('AILIT_UNHEALTHY', '智慧记连接检查未通过', {

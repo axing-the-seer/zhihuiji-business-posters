@@ -1,0 +1,45 @@
+{
+  "name": "zhihuiji-business-posters",
+  "version": "1.5.0",
+  "description": "Mobile business calendars and monthly reports generated from Zhihuiji data",
+  "homepage": "https://github.com/axing-the-seer/zhihuiji-business-posters",
+  "keywords": [
+    "zhihuiji",
+    "business-calendar",
+    "monthly-report",
+    "business-report"
+  ],
+  "skills": [
+    "./skills/business-posters"
+  ],
+  "dependencies": {
+    "connectors": [
+      "ailit"
+    ]
+  },
+  "plugin": "zhihuiji-business-posters",
+  "displayName": {
+    "en": "Zhihuiji Visual Reports",
+    "zh": "智慧记图报"
+  },
+  "displayDescription": {
+    "en": "Create mobile business calendars and monthly reports from connected Zhihuiji data.",
+    "zh": "读取已连接的智慧记经营数据，生成适合手机查看的经营日历和经营月报。"
+  },
+  "avatar": "icon.png",
+  "categoryId": "07-SalesCommerce",
+  "quickPrompts": [
+    {
+      "en": "Show me this month's payment calendar",
+      "zh": "给我发下这个月的收款日历"
+    },
+    {
+      "en": "How is business doing overall this month?",
+      "zh": "看看这个月整体经营情况"
+    },
+    {
+      "en": "How did business do last month?",
+      "zh": "上个月生意怎么样？"
+    }
+  ]
+}

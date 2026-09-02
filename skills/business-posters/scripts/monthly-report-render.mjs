@@ -1,18 +1,19 @@
 import {
+  constants,
+  copyFileSync,
+  existsSync,
   readFileSync,
   writeFileSync,
   mkdirSync,
   mkdtempSync,
-  renameSync,
   rmSync
 } from 'node:fs';
-import { dirname, extname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { fileURLToPath } from 'node:url';
 import { formatMoney, PosterError } from './calendar-core.mjs';
+import { embeddedImageData } from './embedded-assets.mjs';
+import { loadSharp } from './render-runtime.mjs';
 
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const SKILL_DIR = resolve(SCRIPT_DIR, '..');
 const FONT_STACK = 'PingFang SC, Noto Sans CJK SC, Microsoft YaHei, sans-serif';
 const WIDTH = 1080;
 const HEIGHT = 1620;
@@ -40,13 +41,6 @@ function esc(value) {
     .replaceAll('>', '&gt;')
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&apos;');
-}
-
-function imageData(relativePath) {
-  const path = resolve(SKILL_DIR, relativePath);
-  const extension = extname(path).slice(1).toLowerCase();
-  const mime = extension === 'jpg' || extension === 'jpeg' ? 'image/jpeg' : 'image/png';
-  return `data:${mime};base64,${readFileSync(path).toString('base64')}`;
 }
 
 function shortText(value, max) {
@@ -145,8 +139,8 @@ function svgShell(body) {
 }
 
 function jointLogo(x = 48, y = 34) {
-  const workbuddy = imageData('assets/brand/workbuddy-logo.png');
-  const zhihuiji = imageData('assets/brand/zhihuiji-logo.png');
+  const workbuddy = embeddedImageData('assets/brand/workbuddy-logo.png');
+  const zhihuiji = embeddedImageData('assets/brand/zhihuiji-logo.png');
   return `<g filter="url(#smallShadow)">
     <rect x="${x}" y="${y}" width="348" height="78" rx="24" fill="#FFFFFF" stroke="#E5EDF8"/>
     <image x="${x + 18}" y="${y + 16}" width="150" height="46" href="${workbuddy}" preserveAspectRatio="xMidYMid meet"/>
@@ -210,7 +204,7 @@ function sectionIcon(kind, cx, cy, color, fill) {
 }
 
 function reportHeader(model, sectionTitle, pageNumber, artPath, tagline = '') {
-  const art = imageData(artPath);
+  const art = embeddedImageData(artPath);
   if (!tagline) {
     return `${jointLogo()}
       <text x="48" y="184" font-size="50" font-weight="850" fill="${COLORS.ink}">${esc(sectionTitle)}</text>
@@ -231,7 +225,7 @@ function reportHeader(model, sectionTitle, pageNumber, artPath, tagline = '') {
 }
 
 function pageFooter(model, pageNumber, { large = false, showPageNumber = true, tightSpacing = false } = {}) {
-  const qr = imageData('assets/brand/zhihuiji-qr.png');
+  const qr = embeddedImageData('assets/brand/zhihuiji-qr.png');
   const cutoff = tightSpacing ? `数据截止${model.period.end}` : `数据截止 ${model.period.end}`;
   const generatedBy = tightSpacing ? '由WorkBuddy生成' : '由 WorkBuddy 生成';
   const brandName = tightSpacing ? '智慧记AI进销存' : '智慧记 AI 进销存';
@@ -673,28 +667,39 @@ function verifyPng(path) {
 }
 
 export async function renderMonthlyReportPngSet(model, outputDir, { keepSvg = false, page2Variant = 'clean' } = {}) {
+  const absoluteDir = resolve(outputDir);
+  const pages = renderMonthlyReportSvgs(model, { page2Variant });
+  const targets = pages.flatMap((page) => {
+    const base = `经营月报-${model.period.month}-${page.slug}`;
+    return [
+      join(absoluteDir, `${base}.png`),
+      ...(keepSvg ? [join(absoluteDir, `${base}.svg`)] : [])
+    ];
+  });
+  for (const target of targets) {
+    if (existsSync(target)) throw new PosterError('OUTPUT_EXISTS', `目标位置已经存在同名文件：${target}`);
+  }
   let sharp;
   try {
-    ({ default: sharp } = await import('sharp'));
+    sharp = await loadSharp();
   } catch (error) {
-    throw new PosterError('RENDERER_MISSING', '经营海报渲染组件未初始化', { cause_code: error?.code || 'UNKNOWN' });
+    throw new PosterError('RENDERER_MISSING', '图片渲染组件未初始化', { cause_code: error?.code || 'UNKNOWN' });
   }
-  const absoluteDir = resolve(outputDir);
   mkdirSync(absoluteDir, { recursive: true });
   const work = mkdtempSync(join(tmpdir(), 'ailit-monthly-report-'));
   const artifacts = [];
   try {
-    for (const page of renderMonthlyReportSvgs(model, { page2Variant })) {
+    for (const page of pages) {
       const base = `经营月报-${model.period.month}-${page.slug}`;
       const temporaryPng = join(work, `${base}.png`);
       await sharp(Buffer.from(page.svg)).png({ compressionLevel: 9, adaptiveFiltering: true }).toFile(temporaryPng);
       verifyPng(temporaryPng);
       const finalPng = join(absoluteDir, `${base}.png`);
-      renameSync(temporaryPng, finalPng);
+      copyFileSync(temporaryPng, finalPng, constants.COPYFILE_EXCL);
       let finalSvg = null;
       if (keepSvg) {
         finalSvg = join(absoluteDir, `${base}.svg`);
-        writeFileSync(finalSvg, page.svg, 'utf8');
+        writeFileSync(finalSvg, page.svg, { encoding: 'utf8', flag: 'wx' });
       }
       artifacts.push({ title: page.title, png: finalPng, svg: finalSvg });
     }
