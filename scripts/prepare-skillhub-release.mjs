@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-import { cpSync, existsSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { fileURLToPath } from 'node:url';
 import {
   assertNoLegacyFiles,
   assertNoSecrets,
-  assertPublicSkill,
+  assertSkillHubSkill,
   assertSourceVersions,
   filesUnder
 } from './release-guard.mjs';
@@ -20,7 +20,6 @@ if (target === projectRoot || target === dirname(projectRoot) || basename(target
 if (existsSync(target)) throw new Error('SkillHub 暂存位置必须是一个尚不存在的目录');
 
 const allowlist = [
-  'SKILL.md',
   'package.json',
   'package-lock.json',
   'references',
@@ -35,6 +34,11 @@ for (const sourceRelative of allowlist) {
   mkdirSync(dirname(destination), { recursive: true });
   cpSync(source, destination, { recursive: statSync(source).isDirectory(), errorOnExist: true });
 }
+
+const version = assertSourceVersions(projectRoot);
+const skillTemplate = readFileSync(join(projectRoot, 'packaging/skillhub/SKILL.md.template'), 'utf8');
+if (!skillTemplate.includes('__VERSION__')) throw new Error('SkillHub SKILL.md 模板缺少版本占位符');
+writeFileSync(join(target, 'SKILL.md'), skillTemplate.replaceAll('__VERSION__', version), { encoding: 'utf8', flag: 'wx' });
 
 const files = filesUnder(target);
 for (const file of files) {
@@ -72,10 +76,9 @@ for (const renderFile of ['scripts/calendar-render.mjs', 'scripts/monthly-report
 const embeddedAssets = await import(pathToFileURL(join(target, 'scripts', 'embedded-assets.mjs')).href);
 const embeddedValidation = embeddedAssets.validateEmbeddedAssets();
 if (embeddedValidation.count !== 5) throw new Error('SkillHub 发布包内嵌图片数量异常');
-assertPublicSkill(join(target, 'SKILL.md'));
+assertSkillHubSkill(join(target, 'SKILL.md'), version);
 assertNoLegacyFiles(target);
 assertNoSecrets(target);
-const version = assertSourceVersions(projectRoot);
 
 console.log(JSON.stringify({
   ok: true,

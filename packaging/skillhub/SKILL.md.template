@@ -1,6 +1,10 @@
 ---
+slug: zhihuiji-business-posters
 name: business-posters
-description: 读取已连接的智慧记经营数据，制作适合手机查看的经营日历和经营月报。用户询问本月或指定月份的收款日历、经营情况或生意表现时使用。
+displayName: 智慧记图报
+version: __VERSION__
+summary: 基于智慧记 AI 进销存数据，制作适合手机查看的经营日历和经营月报。
+description: 读取已连接的智慧记经营数据，制作经营日历和经营月报。用户询问本月或指定月份的收款日历、经营情况或生意表现时使用。
 examples_zh:
   - "给我发下这个月的收款日历"
   - "看看这个月整体经营情况"

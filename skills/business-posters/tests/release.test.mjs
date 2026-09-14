@@ -4,6 +4,7 @@ import {
   copyFileSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync
@@ -15,6 +16,7 @@ import {
   assertNoLegacyFiles,
   assertNoSecrets,
   assertPublicSkill,
+  assertSkillHubSkill,
   assertSourceVersions,
   filesUnder
 } from '../../../scripts/release-guard.mjs';
@@ -42,6 +44,17 @@ test('公开 Skill 混入命令或开发术语时拒绝发布', () => withTemp('
   assert.throws(() => assertPublicSkill(target), /公开正文含技术内容/);
 }));
 
+test('SkillHub 专用 SKILL.md 保持既有 slug、展示名和统一版本', () => withTemp('release-skillhub-skill-', (directory) => {
+  const version = assertSourceVersions(projectRoot);
+  const template = join(projectRoot, 'packaging/skillhub/SKILL.md.template');
+  const source = readFileSync(template, 'utf8').replaceAll('__VERSION__', version);
+  const target = join(directory, 'SKILL.md');
+  writeFileSync(target, source);
+  assert.doesNotThrow(() => assertSkillHubSkill(target, version));
+  writeFileSync(target, source.replace('slug: zhihuiji-business-posters', 'slug: another-skill'));
+  assert.throws(() => assertSkillHubSkill(target, version), /slug 不匹配/);
+}));
+
 test('发布目录混入日报或对账脚本时拒绝发布', () => withTemp('release-legacy-', (directory) => {
   mkdirSync(join(directory, 'scripts'));
   writeFileSync(join(directory, 'scripts/daily-report-core.mjs'), 'export default true;\n');
@@ -63,5 +76,5 @@ test('发布目录混入符号链接时拒绝发布', () => withTemp('release-sy
 }));
 
 test('源码中 Skill、锁文件和 WorkBuddy 版本号一致', () => {
-  assert.equal(assertSourceVersions(projectRoot), '1.5.2');
+  assert.equal(assertSourceVersions(projectRoot), '1.5.3');
 });

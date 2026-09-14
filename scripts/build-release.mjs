@@ -17,6 +17,7 @@ import {
   assertNoLegacyFiles,
   assertNoSecrets,
   assertPublicSkill,
+  assertSkillHubSkill,
   assertRuntimeParity,
   assertSourceVersions,
   manifestFor,
@@ -85,7 +86,7 @@ try {
   run(process.execPath, [join(projectRoot, 'scripts/prepare-skillhub-release.mjs'), skillHubStage]);
   run(process.execPath, [join(projectRoot, 'scripts/prepare-release.mjs'), githubStage]);
 
-  assertPublicSkill(join(skillHubStage, 'SKILL.md'));
+  assertSkillHubSkill(join(skillHubStage, 'SKILL.md'), version);
   assertPublicSkill(join(githubStage, 'skills/business-posters/SKILL.md'));
   assertNoLegacyFiles(skillHubStage);
   assertNoLegacyFiles(githubStage);
