@@ -400,14 +400,16 @@ function listRows({ items, x, y, width, rowHeight, maxValue, value, secondary, e
   return items.map((item, index) => {
     const yy = y + index * rowHeight;
     const numeric = Math.max(0, value(item));
-    const trackX = x + 310;
-    const trackWidth = width - 470;
+    // Keep the bar on its own line: long product names must never cross it.
+    const trackX = x + 48;
+    const trackWidth = width - 48;
+    const trackY = yy + 35;
     const barWidth = maxValue <= 0 ? 0 : trackWidth * numeric / maxValue;
     return `<circle cx="${x + 18}" cy="${yy + 15}" r="16" fill="${index === 0 ? color : '#E9EFF8'}"/>
       <text x="${x + 18}" y="${yy + 22}" text-anchor="middle" font-size="16" font-weight="800" fill="${index === 0 ? '#FFFFFF' : COLORS.muted}">${index + 1}</text>
       <text x="${x + 48}" y="${yy + 23}" font-size="23" font-weight="650" fill="${COLORS.text}">${esc(shortText(item.name, 15))}</text>
-      <rect x="${trackX}" y="${yy + 10}" width="${trackWidth}" height="9" rx="4.5" fill="#EAF0F8"/>
-      <rect x="${trackX}" y="${yy + 10}" width="${barWidth}" height="9" rx="4.5" fill="${index === 0 ? color : color === COLORS.mint ? '#BFECE2' : '#A9C9FF'}"/>
+      <rect x="${trackX}" y="${trackY}" width="${trackWidth}" height="7" rx="3.5" fill="#EAF0F8"/>
+      <rect x="${trackX}" y="${trackY}" width="${barWidth}" height="7" rx="3.5" fill="${index === 0 ? color : color === COLORS.mint ? '#BFECE2' : '#A9C9FF'}"/>
       <text x="${x + width}" y="${yy + 23}" text-anchor="end" font-size="24" font-weight="750" fill="${COLORS.ink}">${esc(secondary(item))}</text>
       `;
   }).join('');

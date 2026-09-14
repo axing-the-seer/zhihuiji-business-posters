@@ -169,6 +169,18 @@ test('真实零数据保留明确零状态并可渲染全部页面', async () =>
   }
 });
 
+test('商品排行的进度条位于商品名称下方，长名称不会压在横条上', () => {
+  const model = buildMonthlyReportModel(input());
+  const page = renderMonthlyReportSvgs(model)[1].svg;
+  const names = [...page.matchAll(/<text x="130" y="(\d+)" font-size="23" font-weight="650"[^>]*>很长的测试商品名称[^<]*<\/text>/g)];
+  const tracks = [...page.matchAll(/<rect x="130" y="(\d+)" width="862" height="7" rx="3\.5" fill="#EAF0F8"\/>/g)];
+  assert.equal(names.length, 2);
+  assert.equal(tracks.length, 2);
+  for (let index = 0; index < names.length; index += 1) {
+    assert.ok(Number(tracks[index][1]) > Number(names[index][1]) + 8);
+  }
+});
+
 test('经营月报发现任一同名文件时不会生成或覆盖其他页面', async () => {
   const model = buildMonthlyReportModel(input());
   const directory = mkdtempSync(join(tmpdir(), 'monthly-no-overwrite-'));
