@@ -48,14 +48,78 @@ function shortText(value, max) {
   return chars.length <= max ? chars.join('') : `${chars.slice(0, Math.max(1, max - 1)).join('')}…`;
 }
 
+function characterWidth(char, fontSize) {
+  if (/\s/.test(char)) return fontSize * .32;
+  if (/[\u2E80-\u9FFF\uF900-\uFAFF\uFF01-\uFF60]/u.test(char)) return fontSize;
+  if (/\p{Extended_Pictographic}/u.test(char)) return fontSize * 1.2;
+  if (/[0-9]/.test(char)) return fontSize * .58;
+  if (/[A-Z%@¥]/.test(char)) return fontSize * .68;
+  return fontSize * .5;
+}
+
 function estimatedTextWidth(value, fontSize) {
-  return Math.ceil(Array.from(String(value ?? '')).reduce((width, char) => {
-    if (/\s/.test(char)) return width + fontSize * .32;
-    if (/[\u3400-\u9FFF\uF900-\uFAFF]/u.test(char)) return width + fontSize;
-    if (/[0-9]/.test(char)) return width + fontSize * .58;
-    if (/[A-Z%@¥]/.test(char)) return width + fontSize * .68;
-    return width + fontSize * .5;
-  }, 0));
+  return Math.ceil(Array.from(String(value ?? '')).reduce((width, char) => width + characterWidth(char, fontSize), 0));
+}
+
+function prefixWithinWidth(value, width, fontSize, reserveEllipsis = false) {
+  const chars = Array.from(String(value ?? ''));
+  const limit = width * .94 - (reserveEllipsis ? estimatedTextWidth('…', fontSize) : 0);
+  let end = 0;
+  let used = 0;
+  while (end < chars.length && used + characterWidth(chars[end], fontSize) <= limit) {
+    used += characterWidth(chars[end], fontSize);
+    end += 1;
+  }
+  return chars.slice(0, end).join('');
+}
+
+function fitLine(value, width, sizes = [23, 21, 19]) {
+  const source = String(value ?? '').trim();
+  for (const fontSize of sizes) {
+    if (estimatedTextWidth(source, fontSize) <= width * .94) return { lines: [source], fontSize };
+  }
+  const fontSize = sizes.at(-1);
+  const prefix = prefixWithinWidth(source, width, fontSize, true).trimEnd();
+  return { lines: [`${prefix || Array.from(source)[0] || ''}…`], fontSize };
+}
+
+function fitName(value, width, { singleSizes = [23, 21, 19], wrapSizes = [18, 16] } = {}) {
+  const source = String(value ?? '').trim() || '未命名';
+  for (const fontSize of singleSizes) {
+    if (estimatedTextWidth(source, fontSize) <= width * .94) return { lines: [source], fontSize };
+  }
+  for (const fontSize of wrapSizes) {
+    const firstFit = prefixWithinWidth(source, width, fontSize);
+    const chars = Array.from(source);
+    const maxSplit = Array.from(firstFit).length;
+    let split = maxSplit;
+    const minNaturalBreak = width * .58;
+    for (let index = 1; index <= maxSplit; index += 1) {
+      if (/[\s·/（）()，,_-]/u.test(chars[index - 1])
+        && estimatedTextWidth(chars.slice(0, index).join(''), fontSize) >= minNaturalBreak) split = index;
+    }
+    const first = chars.slice(0, split).join('').trimEnd();
+    const rest = chars.slice(split).join('').trimStart();
+    if (!rest) return { lines: [first], fontSize };
+    if (rest && estimatedTextWidth(rest, fontSize) <= width * .94) {
+      return { lines: [first, rest], fontSize };
+    }
+  }
+  const fontSize = wrapSizes.at(-1);
+  const first = prefixWithinWidth(source, width, fontSize);
+  const rest = source.slice(first.length).trimStart();
+  if (!rest) return { lines: [first], fontSize };
+  const second = prefixWithinWidth(rest, width, fontSize, true).trimEnd();
+  return { lines: [first, `${second || Array.from(rest)[0] || ''}…`], fontSize };
+}
+
+function boundedText(value, { id, x, width, top, height, oneY, twoY, anchor = 'start', fontWeight = 650, fill = COLORS.text, singleSizes, wrapSizes }) {
+  const layout = twoY
+    ? fitName(value, width, { singleSizes, wrapSizes })
+    : fitLine(value, width, singleSizes);
+  const baselines = layout.lines.length === 1 ? [oneY] : twoY;
+  return `<defs><clipPath id="${id}"><rect x="${x}" y="${top}" width="${width}" height="${height}"/></clipPath></defs>
+    <g clip-path="url(#${id})">${layout.lines.map((line, index) => `<text x="${anchor === 'end' ? x + width : x}" y="${baselines[index]}" text-anchor="${anchor}" font-size="${layout.fontSize}" font-weight="${fontWeight}" fill="${fill}">${esc(line)}</text>`).join('')}</g>`;
 }
 
 function wrapLines(value, maxChars, maxLines = 2) {
@@ -336,10 +400,10 @@ function renderOverview(model) {
     <text x="72" y="612" font-size="30" font-weight="820" fill="${COLORS.ink}">经营建议</text>
     <rect x="72" y="630" width="934" height="42" rx="21" fill="#EDF5FF"/>
     <circle cx="94" cy="651" r="8" fill="${COLORS.blue}"/>
-    <text x="116" y="659" font-size="23" font-weight="560" fill="${COLORS.text}">${esc(shortText(model.insights.primary_product, 38))}</text>
+    ${boundedText(model.insights.primary_product, { id: 'primaryProductInsightClip', x: 116, width: 870, top: 635, height: 35, oneY: 659, fontWeight: 560, singleSizes: [23, 21, 19] })}
     <rect x="72" y="686" width="934" height="42" rx="21" fill="#FFF4E5"/>
     <circle cx="94" cy="707" r="8" fill="${COLORS.amber}"/>
-    <text x="116" y="715" font-size="23" font-weight="560" fill="${COLORS.text}">${esc(shortText(model.insights.risk, 38))}</text>`;
+    ${boundedText(model.insights.risk, { id: 'riskInsightClip', x: 116, width: 870, top: 691, height: 35, oneY: 715, fontWeight: 560, singleSizes: [23, 21, 19] })}`;
 
   body += secondaryMetricCard({ x: 42, y: 776, width: 487, title: '实收金额', value: fullMoney(model.overview.receipts_cents), note: `回款率 ${pct(model.overview.receipt_rate)}`, color: COLORS.mint });
   body += secondaryMetricCard({ x: 551, y: 776, width: 487, title: '销售单数', value: `${model.overview.order_count.toLocaleString('zh-CN')} 单`, note: orderComparison.text, color: COLORS.violet });
@@ -352,7 +416,7 @@ function renderOverview(model) {
     <rect x="76" y="1320" width="930" height="88" rx="22" fill="url(#blueOpen)"/>
     <text x="101" y="1351" font-size="21" fill="${COLORS.muted}">本月最高单日收入</text>
     <text x="101" y="1388" font-size="27" font-weight="800" fill="${COLORS.blueDark}">${model.highest_day.date ? `${model.period.month_number}月${Number(model.highest_day.date.slice(8, 10))}日 · ${fullMoney(model.highest_day.amount_cents)}` : '本月销售额为 0'}</text>
-    <text x="978" y="1382" text-anchor="end" font-size="24" font-weight="700" fill="${COLORS.muted}">${primary ? `主力商品：${esc(shortText(primary.name, 14))}` : '本月无商品销售记录'}</text>
+    ${boundedText(primary ? `主力商品：${primary.name}` : '本月无商品销售记录', { id: 'primaryProductSummaryClip', x: 520, width: 458, top: 1357, height: 39, oneY: 1382, anchor: 'end', fontWeight: 700, fill: COLORS.muted, singleSizes: [24, 22, 20] })}
     ${pageFooter(model, 1, { large: true, showPageNumber: false, tightSpacing: true })}`;
   return svgShell(body);
 }
@@ -389,42 +453,27 @@ function channelLegend(model, x, y, { rowGap = 42, amountOffset = 256, shareOffs
   return model.channels.slice(0, 5).map((channel, index) => {
     const yy = y + index * rowGap;
     return `<circle cx="${x}" cy="${yy}" r="8" fill="${channelColor(channel, index)}"/>
-      <text x="${x + 22}" y="${yy + 8}" font-size="23" font-weight="650" fill="${COLORS.text}">${esc(shortText(channel.name, 8))}</text>
+      ${boundedText(channel.name, { id: `channelNameClip-${index}`, x: x + 22, width: 84, top: yy - 18, height: 32, oneY: yy + 8, singleSizes: [23, 21, 19] })}
       <text x="${x + amountOffset}" y="${yy + 8}" text-anchor="end" font-size="22" fill="${COLORS.ink}">${esc(compactMoney(channel.amount_cents))}</text>
       <text x="${x + shareOffset}" y="${yy + 8}" text-anchor="end" font-size="21" fill="${COLORS.muted}">${(channel.share * 100).toFixed(1)}%</text>`;
   }).join('');
 }
 
-function listRows({ items, x, y, width, rowHeight, maxValue, value, secondary, emptyText = '暂无数据', color = COLORS.blue }) {
+function listRows({ items, x, y, width, rowHeight, maxValue, value, secondary, clipPrefix, emptyText = '暂无数据', color = COLORS.blue }) {
   if (!items.length) return `<text x="${x + width / 2}" y="${y + 74}" text-anchor="middle" font-size="28" fill="${COLORS.faint}">${esc(emptyText)}</text>`;
   return items.map((item, index) => {
     const yy = y + index * rowHeight;
     const numeric = Math.max(0, value(item));
-    // Keep the bar on its own line: long product names must never cross it.
-    const trackX = x + 48;
-    const trackWidth = width - 48;
-    const trackY = yy + 35;
+    const trackX = x + 310;
+    const trackWidth = width - 470;
     const barWidth = maxValue <= 0 ? 0 : trackWidth * numeric / maxValue;
     return `<circle cx="${x + 18}" cy="${yy + 15}" r="16" fill="${index === 0 ? color : '#E9EFF8'}"/>
       <text x="${x + 18}" y="${yy + 22}" text-anchor="middle" font-size="16" font-weight="800" fill="${index === 0 ? '#FFFFFF' : COLORS.muted}">${index + 1}</text>
-      <text x="${x + 48}" y="${yy + 23}" font-size="23" font-weight="650" fill="${COLORS.text}">${esc(shortText(item.name, 15))}</text>
-      <rect x="${trackX}" y="${trackY}" width="${trackWidth}" height="7" rx="3.5" fill="#EAF0F8"/>
-      <rect x="${trackX}" y="${trackY}" width="${barWidth}" height="7" rx="3.5" fill="${index === 0 ? color : color === COLORS.mint ? '#BFECE2' : '#A9C9FF'}"/>
+      ${boundedText(item.name, { id: `${clipPrefix}-${index}`, x: x + 48, width: trackX - x - 62, top: yy - 2, height: 43, oneY: yy + 23, twoY: [yy + 14, yy + 35] })}
+      <rect x="${trackX}" y="${yy + 10}" width="${trackWidth}" height="9" rx="4.5" fill="#EAF0F8"/>
+      <rect x="${trackX}" y="${yy + 10}" width="${barWidth}" height="9" rx="4.5" fill="${index === 0 ? color : color === COLORS.mint ? '#BFECE2' : '#A9C9FF'}"/>
       <text x="${x + width}" y="${yy + 23}" text-anchor="end" font-size="24" font-weight="750" fill="${COLORS.ink}">${esc(secondary(item))}</text>
       `;
-  }).join('');
-}
-
-function stockRiskRows(items, x, y, width, color, emptyText) {
-  if (!items.length) {
-    return `<text x="${x + width / 2}" y="${y + 55}" text-anchor="middle" font-size="24" fill="${COLORS.faint}">${esc(emptyText)}</text>`;
-  }
-  return items.slice(0, 3).map((item, index) => {
-    const yy = y + index * 42;
-    const stock = `${item.stock.toLocaleString('zh-CN')}${item.unit || ''}`;
-    return `<circle cx="${x + 12}" cy="${yy + 12}" r="10" fill="${index === 0 ? color : '#DCE5F2'}"/>
-      <text x="${x + 34}" y="${yy + 20}" font-size="24" font-weight="620" fill="${COLORS.text}">${esc(shortText(item.name, 24))}</text>
-      <text x="${x + width}" y="${yy + 20}" text-anchor="end" font-size="24" font-weight="760" fill="${color}">${esc(stock)}</text>`;
   }).join('');
 }
 
@@ -435,8 +484,9 @@ function compactStockRows(items, x, y, width, color, emptyText) {
   return items.slice(0, 3).map((item, index) => {
     const yy = y + index * 44;
     const stock = `${item.stock.toLocaleString('zh-CN')}${item.unit || ''}`;
+    const nameWidth = Math.max(1, width - 30 - estimatedTextWidth(stock, 21) - 20);
     return `<circle cx="${x + 8}" cy="${yy + 10}" r="8" fill="${index === 0 ? color : '#DCE5F2'}"/>
-      <text x="${x + 30}" y="${yy + 18}" font-size="21" font-weight="600" fill="${COLORS.text}">${esc(shortText(item.name, 16))}</text>
+      ${boundedText(item.name, { id: `stock-${color.replace('#', '')}-${index}`, x: x + 30, width: nameWidth, top: yy - 3, height: 41, oneY: yy + 18, twoY: [yy + 12, yy + 31], fontWeight: 600, singleSizes: [21, 19, 17], wrapSizes: [17, 16] })}
       <text x="${x + width}" y="${yy + 18}" text-anchor="end" font-size="21" font-weight="730" fill="${color}">${esc(stock)}</text>`;
   }).join('');
 }
@@ -458,7 +508,7 @@ function debtLineRows(items, x, y, width, maxValue, rowGap = 43) {
     const barWidth = maxValue <= 0 ? 0 : trackWidth * Math.max(0, item.amount_cents) / maxValue;
     return `<circle cx="${x + 18}" cy="${yy + 15}" r="16" fill="${index === 0 ? COLORS.coral : '#E9EFF8'}"/>
       <text x="${x + 18}" y="${yy + 22}" text-anchor="middle" font-size="16" font-weight="800" fill="${index === 0 ? '#FFFFFF' : COLORS.muted}">${index + 1}</text>
-      <text x="${x + 48}" y="${yy + 23}" font-size="23" font-weight="650" fill="${COLORS.text}">${esc(shortText(item.name, 15))}</text>
+      ${boundedText(item.name, { id: `debtNameClip-${index}`, x: x + 48, width: trackX - x - 62, top: yy - 2, height: 43, oneY: yy + 23, twoY: [yy + 14, yy + 35] })}
       <rect x="${trackX}" y="${yy + 10}" width="${trackWidth}" height="9" rx="4.5" fill="#EAF0F8"/>
       <rect x="${trackX}" y="${yy + 10}" width="${barWidth}" height="9" rx="4.5" fill="${index === 0 ? COLORS.coral : '#F7B6BE'}"/>
       <text x="${x + width}" y="${yy + 23}" text-anchor="end" font-size="22" font-weight="750" fill="${COLORS.ink}">${esc(fullMoney(item.amount_cents))}</text>`;
@@ -574,6 +624,7 @@ function renderGoodsAndStaff(model, variant = 'clean') {
       maxValue: volumeMax,
       value: (row) => row.quantity,
       secondary: (row) => `${Math.round(row.quantity).toLocaleString('zh-CN')} ${row.unit}`.trim(),
+      clipPrefix: 'volumeNameClip',
       color: COLORS.blue,
       emptyText: '本月无商品销量记录'
     })}`;
@@ -591,6 +642,7 @@ function renderGoodsAndStaff(model, variant = 'clean') {
       maxValue: profitMax,
       value: (row) => row.profit_cents,
       secondary: (row) => compactMoney(row.profit_cents),
+      clipPrefix: 'profitNameClip',
       color: COLORS.mint,
       emptyText: '本月无商品利润记录'
     })}`;
@@ -603,21 +655,6 @@ function renderGoodsAndStaff(model, variant = 'clean') {
   return svgShell(body);
 }
 
-function riskActions(model) {
-  const low = model.risks.low_stock.slice(0, 2).map((row) => `${shortText(row.name, 7)} ${row.stock}${row.unit || ''}`).join(' · ') || '无低库存';
-  const out = model.risks.out_of_stock.slice(0, 2).map((row) => shortText(row.name, 7)).join(' · ') || '无缺货';
-  const actions = model.actions.length ? model.actions : ['本月暂无需要特别提醒的经营动作。'];
-  return `<rect x="72" y="1262" width="446" height="62" rx="19" fill="#FFF6E9"/>
-    <text x="96" y="1288" font-size="19" font-weight="650" fill="#A66A18">低库存 ${model.risks.low_stock.length} 款</text>
-    <text x="96" y="1313" font-size="18" font-weight="400" fill="${COLORS.text}">${esc(low)}</text>
-    <rect x="538" y="1262" width="466" height="62" rx="19" fill="#FFF0F2"/>
-    <text x="562" y="1288" font-size="19" font-weight="650" fill="#C34D5A">缺货 ${model.risks.out_of_stock.length} 款</text>
-    <text x="562" y="1313" font-size="18" font-weight="400" fill="${COLORS.text}">${esc(out)}</text>
-    ${actions.slice(0, 3).map((action, index) => `<circle cx="92" cy="${1350 + index * 34}" r="12" fill="${[COLORS.blue, COLORS.mint, COLORS.amber][index]}"/>
-      <text x="92" y="${1355 + index * 34}" text-anchor="middle" font-size="12" font-weight="700" fill="#FFFFFF">${index + 1}</text>
-      <text x="120" y="${1357 + index * 34}" font-size="20" font-weight="400" fill="${COLORS.text}">${esc(shortText(action, 42))}</text>`).join('')}`;
-}
-
 function renderFundsAndActions(model) {
   const debtMax = Math.max(...model.customers.debt_top.map((row) => row.amount_cents), 1);
   let body = `${page2Backdrop()}${jointLogo()}`;
@@ -625,7 +662,7 @@ function renderFundsAndActions(model) {
   body += `<g filter="url(#shadow)"><rect x="42" y="144" width="996" height="415" rx="32" fill="#FFFFFF" stroke="#DFE8F5"/></g>
     <text x="72" y="194" font-size="28" font-weight="800" fill="${COLORS.ink}">收款情况</text>
     ${donut(model, 190, 376, 113)}
-    ${channelLegend(model, 356, 326, { rowGap: 50, amountOffset: 208, shareOffset: 280 })}
+    ${channelLegend(model, 356, 326, { rowGap: 50, amountOffset: 219, shareOffset: 298 })}
     <rect x="690" y="246" width="306" height="123" rx="22" fill="#EFF8F5" stroke="#D9EEE8"/>
     <text x="716" y="286" font-size="19" fill="#4F786F">回款率</text>
     <text x="716" y="335" font-size="32" font-weight="850" fill="#14886B">${pct(model.overview.receipt_rate)}</text>

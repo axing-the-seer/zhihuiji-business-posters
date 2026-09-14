@@ -169,16 +169,70 @@ test('真实零数据保留明确零状态并可渲染全部页面', async () =>
   }
 });
 
-test('商品排行的进度条位于商品名称下方，长名称不会压在横条上', () => {
+function clippedLines(svg, id) {
+  const group = svg.match(new RegExp(`<g clip-path="url\\(#${id}\\)">([\\s\\S]*?)<\\/g>`));
+  assert.ok(group, `缺少 ${id} 文字裁切区域`);
+  return [...group[1].matchAll(/<text\b[^>]*>([^<]*)<\/text>/g)].map((match) => match[1]);
+}
+
+test('商品排行保持原横条与左右布局，名称按区域缩字换行', () => {
   const model = buildMonthlyReportModel(input());
+  const names = [
+    '雪碧330ml罐装',
+    '芙蓉王（硬红宝石）细支香烟',
+    '白沙烟 白沙（精品二代）20支',
+    '格力(GREE) 凉之韵新国标空调',
+    '海尔BCD-515WLHS冰箱双开门'
+  ];
+  model.products.volume_top = names.map((name, index) => ({ name, quantity: 30 - index, unit: '盒' }));
+  model.products.profit_top = names.map((name, index) => ({ name, profit_cents: 60000 - index * 10000 }));
   const page = renderMonthlyReportSvgs(model)[1].svg;
-  const names = [...page.matchAll(/<text x="130" y="(\d+)" font-size="23" font-weight="650"[^>]*>很长的测试商品名称[^<]*<\/text>/g)];
-  const tracks = [...page.matchAll(/<rect x="130" y="(\d+)" width="862" height="7" rx="3\.5" fill="#EAF0F8"\/>/g)];
-  assert.equal(names.length, 2);
-  assert.equal(tracks.length, 2);
-  for (let index = 0; index < names.length; index += 1) {
-    assert.ok(Number(tracks[index][1]) > Number(names[index][1]) + 8);
+
+  for (const [prefix, startY] of [['volumeNameClip', 490], ['profitNameClip', 854]]) {
+    for (let index = 0; index < 5; index += 1) {
+      const yy = startY + index * 49;
+      assert.match(page, new RegExp(`<clipPath id="${prefix}-${index}"><rect x="130" y="${yy - 2}" width="248" height="43"\\/></clipPath>`));
+      assert.match(page, new RegExp(`<rect x="392" y="${yy + 10}" width="440" height="9" rx="4\\.5" fill="#EAF0F8"\\/>`));
+      const lines = clippedLines(page, `${prefix}-${index}`);
+      assert.ok(lines.length <= 2);
+      assert.equal(lines.join(''), names[index]);
+    }
+    assert.equal(clippedLines(page, `${prefix}-0`).length, 1);
+    assert.equal(clippedLines(page, `${prefix}-1`).length, 2);
   }
+  const comparisonPage = renderMonthlyReportSvgs(model, { page2Variant: 'compare' })[1].svg;
+  assert.match(comparisonPage, /<rect x="392" y="500" width="440" height="9" rx="4\.5" fill="#EAF0F8"\/>/);
+  assert.equal(clippedLines(comparisonPage, 'volumeNameClip-1').length, 2);
+});
+
+test('主力商品、库存提醒和建议中的长商品名都留在各自区域', () => {
+  const longName = '芙蓉王（硬红宝石）细支香烟特别长规格组合装';
+  const current = period({ date: '2026-07-01' });
+  current.products[0].product_name = longName;
+  const model = buildMonthlyReportModel(input({
+    current,
+    snapshots: {
+      debts: { total: 1, rows: [{ id: 'c1', name: '超长名称客户社区团购旗舰店', cur_amt: 120 }] },
+      lowStock: [{ id: 'low', name: longName, cur_stock: 3, unit_name: '件', cost_prc: 2 }],
+      outOfStock: [{ id: 'out', name: '格力(GREE)凉之韵新国标变频空调超长商品名称', cur_stock: 0, unit_name: '台', cost_prc: 5 }]
+    }
+  }));
+  const pages = renderMonthlyReportSvgs(model);
+  for (const id of ['primaryProductInsightClip', 'primaryProductSummaryClip']) assert.ok(clippedLines(pages[0].svg, id).length);
+  for (const id of ['stock-D4830B-0', 'stock-EF6C78-0']) assert.ok(clippedLines(pages[1].svg, id).length <= 2);
+  assert.ok(clippedLines(pages[2].svg, 'debtNameClip-0').length <= 2);
+  assert.deepEqual(clippedLines(pages[2].svg, 'channelNameClip-0'), ['微信支付']);
+  assert.match(pages[2].svg, /<text x="575" y="334" text-anchor="end"/);
+});
+
+test('极长商品名最多两行且受硬边界保护', () => {
+  const model = buildMonthlyReportModel(input());
+  model.products.volume_top = [{ name: `超长商品${'型号规格'.repeat(30)}`, quantity: 3, unit: '件' }];
+  const page = renderMonthlyReportSvgs(model)[1].svg;
+  const lines = clippedLines(page, 'volumeNameClip-0');
+  assert.equal(lines.length, 2);
+  assert.ok(lines[1].endsWith('…'));
+  assert.match(page, /<clipPath id="volumeNameClip-0"><rect x="130" y="488" width="248" height="43"\/><\/clipPath>/);
 });
 
 test('经营月报发现任一同名文件时不会生成或覆盖其他页面', async () => {

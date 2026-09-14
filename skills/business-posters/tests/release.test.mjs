@@ -63,5 +63,5 @@ test('发布目录混入符号链接时拒绝发布', () => withTemp('release-sy
 }));
 
 test('源码中 Skill、锁文件和 WorkBuddy 版本号一致', () => {
-  assert.equal(assertSourceVersions(projectRoot), '1.5.1');
+  assert.equal(assertSourceVersions(projectRoot), '1.5.2');
 });
